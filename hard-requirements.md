@@ -91,41 +91,44 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
 
 ---
 
-## 7. The Tank is round-based with sequential Shark turns
+## 7. The Tank is round-based with dialogue-driven turn order
 
 - After Perplexity completes (or times out), the session enters **The Tank**
-- **One round** = one full pass over every Shark that is still **in** at the **start** of that round, in fixed order (**Mark → Kevin → Barbara**)
-- For each active Shark in order:
+- **Turn order is not a fixed loop** (not “always Mark → Kevin → Barbara”). Who speaks next follows from the **conversation** — Sharks address the entrepreneur or hand off to another Shark — with the **next** turn chosen explicitly in structured JSON (see §14) so the client and server never guess from prose alone
+- **Opening each round:** The **first Shark turn** of the round is the next **in** Shark in **presentation order** **Mark → Kevin → Barbara** (skip any who are **out**). That only seeds the round; **every later turn** uses `nextSpeaker` / `nextAfterPitcher` from the prior Shark line (§14)
+- **One round** = from round start until **every** Shark who was **in** at the **start** of that round has taken **at least one** speaking turn as a Shark this round (orchestrator tracks the set). Then **end of round** runs (§10). *Exception:* if the game ends earlier per §11, rounds need not complete
+- If handoffs would **stall** the round (e.g. the same Sharks repeat without the third ever speaking), the orchestrator **must** override: schedule the next **in** Shark in **presentation order** who has **not** yet spoken this round, until the completion condition is met
+- On each Shark turn:
   1. That Shark's agent generates a response (spoken content + structured JSON — see §14)
-  2. The response text (minus JSON) is sent to ElevenLabs and played
-  3. The user may then reply (text or speech); the reply is appended to **that Shark's** conversation history (per plan — other Sharks receive it via within-round / cross-round injection as implemented)
-- The user must be able to respond **after each Shark speaks** — not only once per round
-- Agents are **not** all called in parallel on a single user action for normal Tank turns — turns are **sequential** per Shark
-- **During** a round, skip only Sharks who were already **out** before that round began (carried forward from prior rounds). All Sharks who were **in** at round start take their turn in order; **in/out for the next round** is determined at **end of round** (see §10)
+  2. The response text (minus JSON) is sent to ElevenLabs and played when that Shark is the active speaker
+  3. Depending on `nextSpeaker`, either the **pitcher** replies next or **another in Shark** speaks — user replies are appended per the plan (that Shark's thread and/or shared session transcript as implemented)
+- The user must be able to respond when the flow calls for the **pitcher** — not only once per round
+- Agents are **not** all called in parallel on a single user action for normal Tank turns — one speaker at a time (Shark or pitcher)
+- **During** a round, only Sharks who were **in** at **round start** may be scheduled; **out** Sharks carried from **prior** rounds never speak. **In/out for the *next* round** is determined at **end of round** from that round's outputs (§10)
 
 ---
 
-## 8. Later Sharks hear earlier Sharks within the same round
+## 8. Sharks hear the conversation so far (within the round and across the session)
 
-- When it is Shark *N*'s turn in a round, that agent must receive context for what **earlier Sharks in that round** said and how the entrepreneur replied
-- Each agent receives only what came **before** them in the current round — not their own line from the same turn, and not Sharks who have not spoken yet
-- Cross-talk happens **within** the round order — there is no separate batch “reaction round” after all three speak in parallel
+- When a Shark speaks, that agent must receive enough context to react like the show: **prior turns in chronological order** for the **current round** (who said what — Sharks and pitcher — before this turn), plus each agent's **own** persisted history across rounds (§3, §18)
+- There is no separate batch “reaction round” after all Sharks speak in parallel — turns are always **one at a time**, in the order the session actually took
+- Injection for “what happened earlier this round” is built from that **chronological** round transcript (and optional per-Shark buffers), not from a fixed Mark/Kevin/Barbara ordering
 
 ---
 
-## 9. ElevenLabs plays per Shark turn, in turn order
+## 9. ElevenLabs plays per Shark turn, in speaking order
 
-- Each Shark's spoken text is sent to ElevenLabs **on that Shark's turn**
-- Audio plays **before** the user's reply input for that Shark is accepted (or equivalent UX: user responds only after hearing that Shark)
+- Each Shark's spoken text is sent to ElevenLabs **when that Shark is the active speaker**
+- Audio plays **before** the pitcher’s next input when `nextSpeaker` is `pitcher` (or equivalent UX)
 - Only one Shark's audio plays at a time — no overlapping voices
-- Playback order follows **Tank turn order** — no randomization requirement
+- Playback follows the **actual** sequence of turns for the session — **not** a fixed permutation independent of dialogue
 
 ---
 
 ## 10. In / out mechanic (matches plan steps 4–5)
 
 - Every Shark turn includes structured JSON with a `status` field (`in` | `out`) — see §14
-- **End of round:** After all active Sharks for that round have spoken, evaluate each participating Shark's **`status`** (and spoken intent, e.g. “I'm out”) from **that round** and update who is **in** vs **out** going forward:
+- **End of round:** After the **round completion** condition in §7 (each Shark who was **in** at round start has spoken at least once this round), evaluate each participating Shark's **`status`** (and spoken intent, e.g. “I'm out”) from **that round** and update who is **in** vs **out** going forward:
   - **in** → still interested (e.g. ✓ above portrait, per product UI)
   - **out** → eliminated (e.g. ✗, grayed out); out Sharks are **skipped in all future rounds**
 - Out Sharks must have said they are out in spoken content when appropriate, consistent with the plan prompts
@@ -173,7 +176,9 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
     "done": boolean,
     "decision": "none" | "offer" | "pass",
     "amount": number,
-    "equity": number
+    "equity": number,
+    "nextSpeaker": "pitcher" | "mark" | "kevin" | "barbara",
+    "nextAfterPitcher": "mark" | "kevin" | "barbara" | null
   }
   ```
 
@@ -182,9 +187,11 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
   - `done`: per prompt — whether the Shark is done with that beat of questioning
   - `decision`: `none` while questioning, `offer` or `pass` when deciding
   - `amount` / `equity`: **0** while not offering; when `decision` is `offer`, amount **$10,000–$2,000,000**, equity **5–50** (percent)
+  - `nextSpeaker`: **Who takes the very next turn** after this Shark finishes — the **pitcher** (entrepreneur) or a specific **in** Shark (cross-talk). Must never name a Shark who is **out** or not eligible this round; invalid values → reject and retry (same max **2** retries as deal terms) or apply safe defaults (§16)
+  - `nextAfterPitcher`: When `nextSpeaker` is **`pitcher`**, this **must** name which Shark speaks **after** the entrepreneur’s reply (among Sharks **in** at round start). When `nextSpeaker` is another Shark, use **`null`** (ignored)
 - The JSON block must **never** be sent to ElevenLabs — strip it before TTS
 - **Out-of-bounds** offer terms: parse JSON every turn — **reject and retry** the agent call (max **2** retries). If still invalid after retries, fall back to an in-character **out** response with safe JSON (e.g. `status: "out"`, `decision: "pass"`, zeros) — aligned with plan Risks & Guardrails
-- **Missing or malformed** JSON (cannot parse): default to `status: "in"`, `done: false` and continue the round — per plan Risks & Guardrails (does not substitute for invalid **deal terms**, which use retries / out fallback above)
+- **Missing or malformed** JSON (cannot parse): default to `status: "in"`, `done: false`, and reasonable defaults for `nextSpeaker` / `nextAfterPitcher` (e.g. `pitcher` + first eligible Shark in presentation order) — per plan Risks & Guardrails (does not substitute for invalid **deal terms**, which use retries / out fallback above)
 
 ---
 
@@ -229,6 +236,8 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
   - Per-agent conversation history (across rounds)
   - Per-agent **in** / **out**
   - Current **round** number (max **3**)
-  - Current **turn** / which Shark speaks next
+  - **Who speaks next** (pitcher vs Shark id) — driven by §14 fields, not an implicit fixed roster
+  - Chronological **turn log** or buffers for the **current round** (for injection per §8)
+  - Which **in-at-start** Sharks have already spoken this round (for §7 round completion)
   - Latest structured JSON per Shark as needed for orchestration
 - *Optional later:* persistent storage (e.g. DynamoDB) is **out of scope** for the hackathon unless the plan is updated
