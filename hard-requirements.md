@@ -60,8 +60,14 @@
 
 ## 8. Sharks must react to each other after each round
 - After all 3 Sharks respond to the user, each agent must receive what the other two said
-- Each Shark must then react — they can agree, disagree, comment on another's offer, or pile on
-- These reactions must stay in character (e.g. Kevin may undercut Barbara's offer, Mark may dismiss Kevin's royalty deal)
+- The other Sharks' responses are injected as a single `user` role message in this exact format:
+  ```
+  "Here is what the other Sharks just said. React to them in character:
+  [Shark A name] said: [Shark A response]
+  [Shark B name] said: [Shark B response]"
+  ```
+- Each agent only receives the other two — not its own response
+- Each Shark must then react in character — agree, disagree, undercut an offer, or pile on
 - This reaction round happens after every user message, not just the opening pitch
 - True mid-speech interruption (cutting audio) is not required
 
@@ -84,12 +90,37 @@
 
 ## 11. Agent deal terms must stay within realistic bounds
 - An agent must not offer terms that are financially nonsensical, e.g. $1,000,000 for 0% equity or $1 for 99% equity
-- Each agent's system prompt must include a constraint on what realistic deal terms look like (e.g. offers between $10,000–$2,000,000, equity between 5%–50%)
-- If an agent produces a deal outside these bounds, the response must be rejected and regenerated — it must not be spoken or displayed to the user
+- Each agent's system prompt must include a constraint: investment amount between $10,000–$2,000,000, equity between 5%–50%
+- Every agent response that contains a deal must include a structured JSON field:
+  ```json
+  { "decision": "offer" | "counter" | "pass", "amount": number, "equity": number }
+  ```
+- The backend parses this field on every response before it is spoken or displayed
+- If the terms are outside the valid bounds, the response is rejected and the agent is called again
+- Maximum 2 retries — if the response is still invalid after 2 retries, the Shark falls back to "I'm out" in character
 
 ---
 
 ## 12. If one agent fails, the session must not silently break
-- If one of the 3 LLM providers returns an error, times out, or refuses the request, the app must not hang or show a blank response
-- The affected Shark must display a visible fallback — e.g. "I need a moment" — and the other two Sharks must continue unaffected
-- A failed agent response must never be passed to the other agents as context during the reaction round
+- If one of the 3 LLM providers returns an error, times out (>10 seconds), or refuses the request, the app must not hang or show a blank response
+- The affected Shark's API route must catch the error and immediately return a hardcoded in-character fallback string specific to that Shark:
+  - Mark: `"I need to think on this one. I'm out for now."`
+  - Kevin: `"You've wasted enough of my time. I'm out."`
+  - Barbara: `"I'm going to sit this one out, but good luck."`
+- The fallback is passed to ElevenLabs and spoken in that Shark's voice like any other response
+- The fallback string is never passed to the other agents as context in the reaction round
+- The session continues with the responses from whichever agents did succeed
+
+---
+
+## 13. Perplexity provides live market research before Sharks respond
+- Before any Shark agent is called, a single Perplexity API request must be made using the user's pitch
+- The exact query sent to Perplexity:
+  ```
+  "Provide a brief research summary for a business pitch in the following category: [business description].
+  Include: current market size, top 3 competitors, recent funding activity in this space,
+  and any notable market trends as of today. Keep it under 150 words."
+  ```
+- Perplexity's response is injected into each Shark's system context as a read-only block — it is not read aloud and does not appear in the conversation history the user sees
+- Perplexity is called once per session on the opening pitch only — not on follow-up turns or negotiation rounds
+- If Perplexity does not respond within 5 seconds, its step is skipped entirely and the 3 agents proceed without market context — the session must not wait or fail
