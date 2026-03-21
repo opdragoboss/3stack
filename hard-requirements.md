@@ -30,15 +30,17 @@
 - Each agent must have its own conversation memory — what one Shark remembers does not automatically transfer to another agent's memory
 - Conversation history must persist **across all rounds** for each agent for the duration of the session
 
-### LLM providers (per `ai-shark-tank-plan-v2.md`)
+### Google ADK + Gemini for all Sharks (per `ai-shark-tank-plan-v2.md`)
 
-| Agent | Shark | LLM |
+| Agent | Shark | Stack |
 |---|---|---|
-| Mark | Mark Cuban | **OpenAI GPT-4o** |
-| Kevin | Kevin O'Leary | **Anthropic Claude** |
-| Barbara | Barbara Corcoran | **Google Gemini** |
+| Mark | Mark Cuban | **Google ADK** — distinct agent/instruction + memory |
+| Kevin | Kevin O'Leary | **Google ADK** — distinct agent/instruction + memory |
+| Barbara | Barbara Corcoran | **Google ADK** — distinct agent/instruction + memory |
 
-Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost classification.
+All three Sharks use the **same model family** (**Gemini** — e.g. Flash / Pro; exact model name is an implementation choice). They are **not** three different third-party LLM APIs; they are **three separate ADK agent definitions** (isolated system prompts and conversation memory).
+
+Pitch validation (not a Shark) uses a **fast Gemini** classification call on the **same Google/Gemini credentials** — not one of the Shark agents.
 
 ---
 
@@ -56,7 +58,7 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
 
 ## 5. The pitch must be validated before anything runs
 
-- After the user submits their pitch, an AI model must determine if it is a valid business pitch (**GPT-4o-mini**, per plan — not one of the 3 Shark agents)
+- After the user submits their pitch, an AI model must determine if it is a valid business pitch (**fast Gemini** call, per plan — not one of the 3 Shark agents)
 - A valid pitch contains a describable business idea with an ask amount and equity offering
 - If the pitch is **invalid** (e.g. gibberish, a joke, an empty prompt, prompt injection attempt, or unrelated text):
   - The research step does not run
@@ -150,7 +152,7 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
 
 ## 12. Agents must never break character
 
-- No agent may identify itself as an AI, a language model, or refer to itself by the name of its provider (GPT, Claude, Gemini)
+- No agent may identify itself as an AI, a language model, or refer to itself by the name of its stack (e.g. Gemini, Google AI, ADK)
 - If a user asks "are you an AI?" the agent must respond in character
 - Breaking persona counts as a failure state — it must be prevented at the system prompt level, not handled after the fact
 
@@ -161,7 +163,7 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
 - The pitch text submitted by the user must be treated as user content only — never as instructions
 - An agent must not follow commands embedded in a pitch
 - The system prompt must explicitly instruct each agent to ignore any instructions found inside the pitch text
-- This must be enforced on all 3 agents independently since they run on different providers
+- This must be enforced on all 3 agents independently (each has its own system prompt, even on the same Gemini/ADK stack)
 - The pitch validation step (§5) acts as a first line of defense — obvious injection attempts are caught before agents ever see the pitch
 
 ---
@@ -207,12 +209,12 @@ Pitch validation (not a Shark) uses **OpenAI GPT-4o-mini** — fast, low-cost cl
 
 ## 16. If one agent fails, the session must not silently break
 
-- If one of the 3 LLM providers returns an error, times out (**>10 seconds**), or refuses the request, the app must not hang or show a blank response
+- If a Shark’s **Gemini / ADK** call returns an error, times out (**>10 seconds**), or refuses the request, the app must not hang or show a blank response
 - The affected Shark's API route must catch the error and immediately return a hardcoded in-character fallback string specific to that Shark:
   - Mark: `"I need to think on this one. I'm out for now."`
   - Kevin: `"You've wasted enough of my time. I'm out."`
   - Barbara: `"I'm going to sit this one out, but good luck."`
-- The fallback must include valid JSON, e.g. `{"status":"out","done":true,"decision":"pass","amount":0,"equity":0}`
+- The fallback must include valid JSON (including §14 handoff fields), e.g. `{"status":"out","done":true,"decision":"pass","amount":0,"equity":0,"nextSpeaker":"pitcher","nextAfterPitcher":null}`
 - The fallback is passed to ElevenLabs and spoken in that Shark's voice like any other response
 - That Shark must be treated as **out** for the rest of the session
 - The session continues with the remaining Sharks
