@@ -398,7 +398,7 @@ PERPLEXITY_API_KEY=
 
 ## Risks & Guardrails
 
-> All guardrails are fully defined in `hard-requirements.md` (reqs 11–15). This section is a quick reference.
+> Full requirement list: `hard-requirements.md` (§5–§18 overlap with orchestration, JSON, scoring, failures). This section is a quick reference.
 
 | Risk | Where it's handled | Mechanism |
 |---|---|---|
