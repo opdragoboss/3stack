@@ -5,42 +5,63 @@ import type { SessionEntry } from "@/lib/types";
 
 const STORAGE_KEY = "shark_session_id";
 
+async function initSession(entry: SessionEntry): Promise<string> {
+  const res = await fetch("/api/session/init", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = (await res.json()) as { sessionId: string };
+  sessionStorage.setItem(STORAGE_KEY, data.sessionId);
+  return data.sessionId;
+}
+
 /**
- * Reuses one browser session id across Research ↔ Pitch so research summary can carry forward.
+ * Validates a stored session ID against the server.
+ * If the session no longer exists (e.g. dev server restarted and in-memory store was wiped),
+ * clears it and creates a fresh one.
  */
+async function validateOrCreate(existingId: string, entry: SessionEntry): Promise<string> {
+  const res = await fetch("/api/pitch/turn", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: existingId, message: "__ping__" }),
+  });
+  if (res.status === 404) {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return initSession(entry);
+  }
+  return existingId;
+}
+
 export function useOrCreateSessionId(preferredEntry: SessionEntry) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const existing = sessionStorage.getItem(STORAGE_KEY);
     if (existing) {
-      queueMicrotask(() => setSessionId(existing));
-      return;
+      validateOrCreate(existing, preferredEntry)
+        .then((id) => {
+          if (!cancelled) setSessionId(id);
+        })
+        .catch(() => {
+          if (!cancelled) setError("Could not start session");
+        });
+    } else {
+      initSession(preferredEntry)
+        .then((id) => {
+          if (!cancelled) setSessionId(id);
+        })
+        .catch(() => {
+          if (!cancelled) setError("Could not start session");
+        });
     }
 
-    let cancelled = false;
-    fetch("/api/session/init", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entry: preferredEntry }),
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(await r.text());
-        return r.json() as Promise<{ sessionId: string }>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        sessionStorage.setItem(STORAGE_KEY, data.sessionId);
-        setSessionId(data.sessionId);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not start session");
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [preferredEntry]);
 
   return { sessionId, error };

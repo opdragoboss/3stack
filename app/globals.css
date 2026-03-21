@@ -1,19 +1,140 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050506;
-  --foreground: #f4f4f5;
+  --foreground: #f0ede8;
 }
 
 @theme inline {
-  --color-background: var(--background);
+  --color-background: #0d1117;
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-dm-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-space-grotesk);
 }
 
 body {
-  background: radial-gradient(1200px 600px at 50% -10%, #1a1510 0%, var(--background) 55%);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+}
+
+/* ── Animated gradient background ─────────────────────────── */
+
+@keyframes bg-drift {
+  0%   { background-position: 0% 0%; }
+  25%  { background-position: 100% 50%; }
+  50%  { background-position: 50% 100%; }
+  75%  { background-position: 0% 50%; }
+  100% { background-position: 0% 0%; }
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse at 20% 0%,  #1a1040 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 10%, #0c1a2e 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 90%, #14100a 0%, transparent 50%),
+    linear-gradient(135deg, #0a0e1a 0%, #100a18 25%, #0d1117 50%, #0a1518 75%, #0e0c14 100%);
+  background-size: 200% 200%;
+  animation: bg-drift 20s ease-in-out infinite;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 50% at 50% -15%, rgba(180, 130, 50, 0.18) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Speaking glow ──────────────────────────────────────────── */
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 24px 6px rgba(212, 168, 83, 0.25); }
+  50% { box-shadow: 0 0 36px 10px rgba(212, 168, 83, 0.45); }
+}
+
+.shark-speaking {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ── Typing dots ────────────────────────────────────────────── */
+
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+.typing-dot {
+  animation: bounce-dot 1s infinite ease-in-out both;
+}
+.typing-dot:nth-child(1) { animation-delay: 0ms; }
+.typing-dot:nth-child(2) { animation-delay: 150ms; }
+.typing-dot:nth-child(3) { animation-delay: 300ms; }
+
+/* ── Audio waveform bars (speaking indicator) ───────────────── */
+
+@keyframes waveform-1 {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+@keyframes waveform-2 {
+  0%, 100% { height: 6px; }
+  40% { height: 20px; }
+}
+@keyframes waveform-3 {
+  0%, 100% { height: 3px; }
+  60% { height: 14px; }
+}
+@keyframes waveform-4 {
+  0%, 100% { height: 5px; }
+  45% { height: 18px; }
+}
+
+.waveform-bar { border-radius: 1px; }
+.waveform-bar:nth-child(1) { animation: waveform-1 0.8s ease-in-out infinite; }
+.waveform-bar:nth-child(2) { animation: waveform-2 0.7s ease-in-out infinite 0.1s; }
+.waveform-bar:nth-child(3) { animation: waveform-3 0.9s ease-in-out infinite 0.05s; }
+.waveform-bar:nth-child(4) { animation: waveform-4 0.75s ease-in-out infinite 0.15s; }
+
+/* ── Pixel avatar CSS animations ────────────────────────── */
+
+@keyframes breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+
+.pixel-breathe {
+  animation: breathe 2.5s ease-in-out infinite;
+}
+
+@keyframes shake-once {
+  0% { transform: translateX(0); }
+  10% { transform: translateX(-3px); }
+  20% { transform: translateX(3px); }
+  30% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  50% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+  70%, 100% { transform: translateX(0); }
+}
+
+.pixel-shake-once {
+  animation: shake-once 0.6s ease-out forwards;
+}
+
+@keyframes lean-in {
+  0% { transform: translateY(0) scale(1); }
+  100% { transform: translateY(-2px) scale(1.03); }
+}
+
+.pixel-lean {
+  animation: lean-in 0.4s ease-out forwards;
 }
