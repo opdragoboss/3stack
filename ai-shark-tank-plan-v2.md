@@ -255,7 +255,7 @@ RULES YOU MUST FOLLOW AT ALL TIMES:
 - **Pitch Mode** — gamified 3-round Shark Tank simulation
 - **Pitch input** — text box or microphone (speech-to-text via Web Speech API)
 - **Live Shark panel** — 3 portraits, each lights up when speaking
-- **Voice playback** — ElevenLabs audio plays per Shark, auto-queued
+- **Streaming voice playback** — ElevenLabs audio plays per Shark as soon as their agent finishes
 - **Shark cross-talk** — Sharks hear and react to each other like they're in the same room
 - **Round system** — Pitch → Grilling → Decision, with elimination
 - **Deal board** — tracks offers from each Shark in real time
