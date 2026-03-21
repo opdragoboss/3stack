@@ -1,6 +1,6 @@
-import { SHARK_ACCENT, SHARK_LABEL, SHARK_ORDER } from "@/lib/constants/sharks";
+import { SHARK_ORDER } from "@/lib/constants/sharks";
+import { SharkCard } from "@/components/shark/SharkCard";
 import type { PitchRound, SharkId } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 type Props = {
   round: PitchRound;
@@ -8,41 +8,22 @@ type Props = {
   out: SharkId[];
 };
 
-export function SharkPanel({ round, activeShark, out }: Props) {
+/**
+ * @deprecated Use SharkCard directly in PitchMode. Kept for backward compatibility
+ * with any code that still imports SharkPanel.
+ */
+export function SharkPanel({ activeShark, out }: Props) {
+  function getState(id: SharkId) {
+    if (out.includes(id)) return "out" as const;
+    if (activeShark === id) return "speaking" as const;
+    return "active" as const;
+  }
+
   return (
-    <div className="w-full">
-      <div className="mb-3 flex items-center justify-between text-sm text-zinc-500">
-        <span>Pitch Mode</span>
-        <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-200">
-          Round {round} —{" "}
-          {round === 1 ? "The Pitch" : round === 2 ? "The Grilling" : "The Decision"}
-        </span>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        {SHARK_ORDER.map((id) => {
-          const isOut = out.includes(id);
-          const isSpeaking = activeShark === id;
-          return (
-            <div
-              key={id}
-              className={cn(
-                "relative overflow-hidden rounded-2xl border border-zinc-800 bg-gradient-to-b p-4 ring-1 transition-all",
-                SHARK_ACCENT[id],
-                isOut && "opacity-40 grayscale",
-                isSpeaking && "ring-2 ring-white/60",
-              )}
-            >
-              <div className="aspect-square w-full rounded-xl bg-zinc-900/80" />
-              <p className="mt-2 text-center text-sm font-semibold text-zinc-100">
-                {SHARK_LABEL[id]}
-              </p>
-              {isOut && (
-                <p className="text-center text-xs font-medium text-red-400">Out</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="flex justify-center gap-5">
+      {SHARK_ORDER.map((id) => (
+        <SharkCard key={id} sharkId={id} state={getState(id)} />
+      ))}
     </div>
   );
 }

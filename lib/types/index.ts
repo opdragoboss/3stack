@@ -36,6 +36,7 @@ export interface ResearchState {
 
 export interface PitchState {
   round: PitchRound;
+  turnInRound: number;
   out: SharkId[];
   /** Injected read-only context for Sharks — not shown as user-visible transcript */
   marketContext?: string;
@@ -43,6 +44,8 @@ export interface PitchState {
   business?: string;
   askAmount?: number;
   equityPercent?: number;
+  /** Conversation history for context passing to LLM agents */
+  history: ChatMessage[];
 }
 
 export interface SessionSnapshot {
@@ -95,4 +98,61 @@ export interface PitchTurnResponse {
   lines: SharkLine[];
   /** Cross-talk reactions (when implemented) */
   reactionLines?: SharkLine[];
+  /** Which sharks are still active after this turn */
+  activeSharks: SharkId[];
+  /** Whether the pitch session has ended */
+  shouldEndPitch: boolean;
+  /** End state type — only present when shouldEndPitch is true */
+  outcome?: SessionEndState;
+  /** Scores and feedback for results pages — only present when shouldEndPitch is true */
+  endData?: {
+    sharkScores: SharkScore[];
+    improvementTips?: string[];
+    dealSharkId?: SharkId;
+    dealAmount?: number;
+    dealEquity?: number;
+  };
+}
+
+/* ── Frontend-only UI types ──────────────────────────────────── */
+
+export type SharkOfferStatus = "in" | "out" | "offer" | "counter";
+
+export interface SharkOffer {
+  sharkId: SharkId;
+  amount: number;
+  equity: number;
+  status: SharkOfferStatus;
+}
+
+export interface PitchMessage {
+  id: string;
+  sender: "user" | "shark";
+  content: string;
+  timestamp: Date;
+  sharkId?: SharkId;
+  isReaction?: boolean;
+}
+
+export interface DealResult {
+  sharkId: SharkId;
+  sharkName: string;
+  amount: number;
+  equity: number;
+  sharkScores: SharkScore[];
+  averageScore: number;
+  grade: string;
+}
+
+export interface NoDealResult {
+  sharkScores: SharkScore[];
+  averageScore: number;
+  grade: string;
+  improvementTips: string[];
+}
+
+export interface SharkScore {
+  sharkId: SharkId;
+  score: number;
+  comment: string;
 }

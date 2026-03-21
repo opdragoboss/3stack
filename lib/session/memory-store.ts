@@ -22,7 +22,9 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
     research: { messages: [] },
     pitch: {
       round: 1,
+      turnInRound: 0,
       out: [] as SharkId[],
+      history: [],
     },
     endState: "active",
   };
