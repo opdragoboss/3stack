@@ -11,14 +11,25 @@ import { TypingIndicator } from "@/components/pitch/TypingIndicator";
 import { useOrCreateSessionId } from "@/hooks/useOrCreateSessionId";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
 import { SHARK_ORDER, SHARK_LABEL, SHARK_MSG_STYLE } from "@/lib/constants/sharks";
+import { TANK_OPENING_LINES } from "@/lib/constants/tank-opening";
 import { cn } from "@/lib/utils";
 import type {
   PitchRound,
   PitchMessage,
   PitchTurnResponse,
+  PitchStartResponse,
   SharkId,
   SharkOffer,
 } from "@/lib/types";
+
+type PitchPhase =
+  | "waiting_session"
+  | "opening"
+  | "ready_to_pitch"
+  | "validating"
+  | "researching"
+  | "invalid"
+  | "in-tank";
 
 const ROUND_NAMES: Record<PitchRound, string> = {
   1: "The Pitch",
@@ -35,6 +46,8 @@ interface SpeechQueueItem {
 export function PitchMode() {
   const router = useRouter();
   const { sessionId, error } = useOrCreateSessionId("pitch");
+  const [phase, setPhase] = useState<PitchPhase>("waiting_session");
+  const [invalidReason, setInvalidReason] = useState("");
   const [round, setRound] = useState<PitchRound>(1);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<PitchMessage[]>([]);
@@ -46,6 +59,8 @@ export function PitchMode() {
   const [isAITyping, setIsAITyping] = useState(false);
   const [roundTransition, setRoundTransition] = useState<PitchRound | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const openingSeededRef = useRef(false);
+  const openingStartedRef = useRef(false);
 
   // ── Speech queue state ────────────────────────────────────
   const [speechQueue, setSpeechQueue] = useState<SpeechQueueItem[]>([]);
@@ -63,6 +78,25 @@ export function PitchMode() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isAITyping]);
+
+  /** Sharks speak first — seed opening queue once session is ready. */
+  useEffect(() => {
+    if (!sessionId || openingSeededRef.current) return;
+    openingSeededRef.current = true;
+    const lines = TANK_OPENING_LINES.map((l) => ({ sharkId: l.sharkId, text: l.text }));
+    setSpeechQueue(lines);
+    setPhase("opening");
+    // Mark that the queue has been seeded so the drain watcher can trust the length
+    setTimeout(() => { openingStartedRef.current = true; }, 0);
+  }, [sessionId]);
+
+  /** After ALL opening lines have drained, hand the floor to the founder. */
+  useEffect(() => {
+    if (phase !== "opening") return;
+    if (!openingStartedRef.current) return;
+    if (speechQueue.length > 0 || currentSpeech) return;
+    setPhase("ready_to_pitch");
+  }, [phase, speechQueue.length, currentSpeech]);
 
   // ── Word-by-word streaming effect ─────────────────────────
   useEffect(() => {
@@ -146,11 +180,7 @@ export function PitchMode() {
     }, 1400);
   }
 
-  async function submit() {
-    if (!sessionId || !input.trim() || isBusy) return;
-
-    const userText = input.trim();
-    setInput("");
+  async function executeTurn(userText: string) {
     setIsAITyping(true);
     setSpeakingShark(null);
 
@@ -176,7 +206,6 @@ export function PitchMode() {
         advanceRound(data.round);
       }
 
-      // Update deal board immediately (decisions are state, not speech)
       for (const line of data.lines) {
         if (line.decision) {
           setOffers((prev) =>
@@ -194,11 +223,9 @@ export function PitchMode() {
         }
       }
 
-      // Sync shark statuses from server
       const serverOut = SHARK_ORDER.filter((id) => !data.activeSharks.includes(id));
       setOutSharks(serverOut);
 
-      // Build speech queue for sequential delivery
       const queue: SpeechQueueItem[] = [];
       for (const line of data.lines) {
         queue.push({ sharkId: line.sharkId, text: line.text });
@@ -209,7 +236,6 @@ export function PitchMode() {
         }
       }
 
-      // Defer end-of-session until all speech has been delivered
       if (data.shouldEndPitch && data.endData) {
         deferredEndRef.current = {
           isDeal: data.outcome === "deal",
@@ -224,11 +250,9 @@ export function PitchMode() {
         };
       }
 
-      // Hide typing dots, start speech delivery
       setIsAITyping(false);
       setSpeechQueue(queue);
 
-      // Pre-set first speaker so there's no flash between typing and speech
       if (queue.length > 0) {
         setSpeakingShark(queue[0].sharkId);
         const firstWords = queue[0].text.split(/\s+/);
@@ -246,6 +270,78 @@ export function PitchMode() {
       ]);
       setIsAITyping(false);
     }
+  }
+
+  async function submit() {
+    if (!sessionId || !input.trim() || isBusy) return;
+    if (
+      phase === "opening" ||
+      phase === "waiting_session" ||
+      phase === "validating" ||
+      phase === "researching"
+    ) {
+      return;
+    }
+
+    if (phase === "ready_to_pitch" || phase === "invalid") {
+      const pitchText = input.trim();
+      setInput("");
+      setInvalidReason("");
+      setPhase("validating");
+
+      try {
+        const res = await fetch("/api/pitch/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, pitchText }),
+        });
+
+        if (res.status === 404) {
+          // Session expired (e.g. dev server restarted) — reload to get a fresh one
+          sessionStorage.removeItem("shark_session_id");
+          window.location.reload();
+          return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const data = (await res.json()) as PitchStartResponse;
+
+        if (!data.valid) {
+          const reason =
+            data.reason ?? "That doesn't look like a valid business pitch.";
+          setInvalidReason(reason);
+          setInput(pitchText);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `pitch-reject-${Date.now()}`,
+              sender: "shark",
+              content: reason,
+              timestamp: new Date(),
+            },
+          ]);
+          setPhase("invalid");
+          setIsAITyping(false);
+          return;
+        }
+
+        setPhase("researching");
+        await new Promise((r) => setTimeout(r, 600));
+        setPhase("in-tank");
+        await executeTurn(pitchText);
+      } catch {
+        setInvalidReason("Something went wrong. Please try again.");
+        setInput(pitchText);
+        setPhase("invalid");
+        setIsAITyping(false);
+      }
+      return;
+    }
+
+    if (phase !== "in-tank") return;
+
+    const userText = input.trim();
+    setInput("");
+    await executeTurn(userText);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -336,8 +432,9 @@ export function PitchMode() {
             {messages.length === 0 && !isAITyping && (
               <div className="flex h-full items-center justify-center">
                 <p className="max-w-md text-center text-sm leading-relaxed text-zinc-500">
-                  Deliver your pitch — tell the Sharks what your business is, how much
-                  you&apos;re asking for, and what equity you&apos;re offering.
+                  {phase === "opening" || phase === "waiting_session"
+                    ? "The Sharks speak first — listen up…"
+                    : "When it’s your turn, use the box below — business, ask amount, and equity."}
                 </p>
               </div>
             )}
@@ -384,7 +481,18 @@ export function PitchMode() {
                 );
               })}
             </AnimatePresence>
-            {isAITyping && <TypingIndicator />}
+            {isAITyping && (
+              <div className="space-y-1">
+                {(phase === "validating" || phase === "researching") && (
+                  <p className="text-center text-xs text-zinc-500">
+                    {phase === "validating"
+                      ? "Checking your pitch…"
+                      : "Researching your market…"}
+                  </p>
+                )}
+                <TypingIndicator />
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -395,14 +503,32 @@ export function PitchMode() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your response or pitch..."
+                placeholder={
+                  phase === "ready_to_pitch" || phase === "invalid"
+                    ? "Your pitch: business, how much you’re raising, equity offered…"
+                    : "Reply to the Sharks…"
+                }
                 rows={2}
-                className="flex-1 resize-none rounded-xl border border-slate-600/40 bg-slate-900/70 px-4 py-3 text-sm text-zinc-100 placeholder:text-slate-500 focus:border-amber-500/60 focus:outline-none"
+                disabled={
+                  isBusy ||
+                  phase === "opening" ||
+                  phase === "waiting_session" ||
+                  phase === "validating" ||
+                  phase === "researching"
+                }
+                className="flex-1 resize-none rounded-xl border border-slate-600/40 bg-slate-900/70 px-4 py-3 text-sm text-zinc-100 placeholder:text-slate-500 focus:border-amber-500/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={() => void submit()}
-                disabled={isBusy || !input.trim()}
+                disabled={
+                  isBusy ||
+                  !input.trim() ||
+                  phase === "opening" ||
+                  phase === "waiting_session" ||
+                  phase === "validating" ||
+                  phase === "researching"
+                }
                 aria-label="Send message"
                 className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500"
               >
