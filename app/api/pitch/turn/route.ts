@@ -75,13 +75,13 @@ const REACTION_POOL: Record<SharkId, string[]> = {
     "Don't listen to Mr. Wonderful's royalty nonsense — take equity and grow.",
   ],
   kevin: [
-    "Mark, you throw money at anything with a logo. This needs more diligence.",
+    "Tony, you throw money at anything with a logo. This needs more diligence.",
     "Barbara, your gut feeling doesn't show up on a balance sheet.",
     "I'm the only one here asking the real questions.",
   ],
   barbara: [
     "Kevin, stop scaring them. Not everything is a spreadsheet.",
-    "Mark's right — the tech angle is strong, but it needs a human touch.",
+    "Tony's right — the tech angle is strong, but it needs a human touch.",
     "I think both of you are missing the point. It's about the brand.",
   ],
 };
