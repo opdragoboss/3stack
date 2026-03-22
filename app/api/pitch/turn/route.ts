@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSession, updateSession } from "@/lib/session";
-import { SHARK_ORDER } from "@/lib/constants/sharks";
+import { SHARK_ORDER, SHARK_LABEL } from "@/lib/constants/sharks";
+import { SHARK_SYSTEM_PROMPT } from "@/lib/constants/prompts";
 import { buildSharkPayload } from "@/lib/agents/buildSharkPayload";
 import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
 import { parseSharkResponse, hasValidDealTerms } from "@/lib/pitch/parseSharkResponse";
+import { enrichSharkLinesWithTts } from "@/lib/elevenlabs";
 import type {
   PitchTurnRequest,
   PitchTurnResponse,
@@ -20,26 +22,92 @@ const MAX_RETRIES = 2;
 /** Safety cap: no more than 4 consecutive Shark calls per user message */
 const MAX_CHAIN_DEPTH = 4;
 
-// TODO(§15): Replace with a dedicated per-Shark scoring call at session end
-const DEFAULT_SCORES: Record<SharkId, { out: number; offer: number }> = {
-  mark: { out: 52, offer: 78 },
-  kevin: { out: 40, offer: 65 },
-  barbara: { out: 55, offer: 82 },
-};
+/**
+ * Ask each Shark to score the pitcher 0–100 based on the full transcript.
+ * Falls back to a neutral score on any failure so the end screen always renders.
+ */
+async function scoreShark(
+  sharkId: SharkId,
+  transcript: string,
+  outcome: "offer" | "pass" | "active",
+): Promise<SharkScore> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const fallbackScore = outcome === "offer" ? 72 : outcome === "pass" ? 38 : 50;
+  const fallbackComment =
+    outcome === "offer" ? "Made an offer." : outcome === "pass" ? "Decided to pass." : "Session ended.";
 
-function buildEndScores(
+  if (!apiKey) return { sharkId, score: fallbackScore, comment: fallbackComment };
+
+  const scoringPrompt = [
+    `You are ${SHARK_LABEL[sharkId]}. The pitch session is over. Score the pitcher from 0 to 100 based solely on what happened in the conversation below.`,
+    ``,
+    `SCORING GUIDE (stay in character — your personality should shape the score and comment):`,
+    `0–20: Terrible. No business, no numbers, no answers. Wasted your time.`,
+    `21–40: Weak. Some effort but major gaps. You're not impressed.`,
+    `41–60: Mediocre. Okay idea, okay answers. Nothing stood out.`,
+    `61–80: Solid. Good answers, credible plan. You see potential.`,
+    `81–100: Exceptional. You're genuinely excited. Rare.`,
+    ``,
+    `Respond ONLY with valid JSON, nothing else: {"score": <0-100>, "comment": "<1 brutal/honest sentence in your voice>"}`,
+    ``,
+    `FULL TRANSCRIPT:`,
+    transcript,
+  ].join("\n");
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-5-nano",
+        messages: [
+          { role: "system", content: SHARK_SYSTEM_PROMPT[sharkId] },
+          { role: "user", content: scoringPrompt },
+        ],
+        max_completion_tokens: 100,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    if (!res.ok) return { sharkId, score: fallbackScore, comment: fallbackComment };
+
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = data?.choices?.[0]?.message?.content?.trim() ?? "";
+
+    // Strip fences if present
+    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(jsonStr) as { score: number; comment: string };
+
+    const score = Math.max(0, Math.min(100, Math.round(parsed.score)));
+    const comment = typeof parsed.comment === "string" && parsed.comment.length > 0
+      ? parsed.comment
+      : fallbackComment;
+
+    return { sharkId, score, comment };
+  } catch {
+    return { sharkId, score: fallbackScore, comment: fallbackComment };
+  }
+}
+
+async function buildEndScores(
   outSharks: SharkId[],
   offers: Partial<Record<SharkId, { amount: number; equity: number }>>,
-): SharkScore[] {
-  return SHARK_ORDER.map((id) => {
-    if (offers[id]) {
-      return { sharkId: id, score: DEFAULT_SCORES[id].offer, comment: "Made an offer." };
-    }
-    if (outSharks.includes(id)) {
-      return { sharkId: id, score: DEFAULT_SCORES[id].out, comment: "Decided to pass." };
-    }
-    return { sharkId: id, score: 60, comment: "Session ended before a final decision." };
-  });
+  fullTranscript: RoundTurnEntry[],
+): Promise<SharkScore[]> {
+  const transcriptText = fullTranscript
+    .map((t) => `${t.speaker === "pitcher" ? "Pitcher" : SHARK_LABEL[t.speaker as SharkId]}: ${t.content}`)
+    .join("\n");
+
+  return Promise.all(
+    SHARK_ORDER.map((id) => {
+      const outcome = offers[id] ? "offer" : outSharks.includes(id) ? "pass" : "active";
+      return scoreShark(id, transcriptText, outcome);
+    }),
+  );
 }
 
 /**
@@ -112,107 +180,209 @@ export async function POST(req: Request) {
     } satisfies PitchTurnResponse);
   }
 
-  // ── Sequential Shark chain ──────────────────────────────────────────────────
-  //
-  // Each user message may trigger multiple Shark calls when a Shark hands off
-  // directly to another Shark (cross-talk) via nextSpeaker. We keep calling until
-  // nextSpeaker === "pitcher", then hand control back to the user.
-  //
-  // agentHistory is NOT mutated here — it is written once at the end of the turn
-  // so buildSharkPayload always sees the clean prev-turn history. The within-turn
-  // context (pitcher message + Shark responses so far) travels via runningRoundTurns,
-  // which buildSharkPayload injects as the final "user" message in each call.
+  // ── Shark turn logic ───────────────────────────────────────────────────────
 
+  const isRoundStart = message === "__round_start__";
+  const roundAtStart = session.pitch.round;
   const runningOut: SharkId[] = [...session.pitch.out];
-  const runningRoundTurns: RoundTurnEntry[] = [
-    ...session.pitch.roundTurns,
-    { speaker: "pitcher", content: message },
-  ];
+  // Don't add the system round-start ping as a pitcher turn entry
+  const runningRoundTurns: RoundTurnEntry[] = isRoundStart
+    ? [...session.pitch.roundTurns]
+    : [...session.pitch.roundTurns, { speaker: "pitcher", content: message }];
   const runningSpoken: SharkId[] = [...session.pitch.spokenThisRound];
   const runningOffers: Partial<Record<SharkId, { amount: number; equity: number }>> = {
     ...session.pitch.offers,
   };
   const lines: SharkLine[] = [];
-
-  let currentSpeaker: SharkId | null = getFirstSpeaker(session.pitch);
-  let chainDepth = 0;
   let lastNextSpeaker: "pitcher" | SharkId = "pitcher";
   let lastNextAfterPitcher: SharkId | null = null;
 
-  while (currentSpeaker !== null && chainDepth < MAX_CHAIN_DEPTH) {
-    const sharkId = currentSpeaker;
-    chainDepth++;
+  // ── Low-effort answer tracking (not counted for system pings) ───────────────
+  const isLowEffort = !isRoundStart && message.trim().split(/\s+/).length < 10;
+  const newConsecutiveLowEffort = isLowEffort
+    ? (session.pitch.consecutiveLowEffort ?? 0) + 1
+    : 0;
 
-    // Build payload using session history + running round transcript as context
-    const tempPitch: PitchState = {
-      ...session.pitch,
-      out: runningOut,
-      roundTurns: runningRoundTurns,
-      spokenThisRound: runningSpoken,
-    };
+  // ── Questions-asked tracking (updated after each shark response) ─────────
+  const runningQuestionsAsked: Partial<Record<SharkId, number>> = {
+    ...session.pitch.questionsAsked,
+  };
+
+  /** Detect {"silent":true} in raw LLM output */
+  function isSilentResponse(raw: string): boolean {
+    const trimmed = raw.trim();
+    // Check for bare JSON or fenced JSON
+    const jsonStr = trimmed.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "").trim();
+    try {
+      const obj = JSON.parse(jsonStr) as Record<string, unknown>;
+      return obj.silent === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Call one shark with retries, return parsed result */
+  async function callShark(sharkId: SharkId, tempPitch: PitchState) {
     const payload = buildSharkPayload(sharkId, tempPitch);
-
-    // Active Sharks (excluding this speaker) used for nextSpeaker/nextAfterPitcher validation
     const otherActive = SHARK_ORDER.filter((id) => !runningOut.includes(id) && id !== sharkId);
 
-    // Call Gemini; retry up to MAX_RETRIES if deal terms are out of §14 bounds
     let rawText = await callGeminiForShark(sharkId, payload);
+
+    // Check for silent response before parsing
+    if (isSilentResponse(rawText)) {
+      return { sharkId, silent: true as const, parsed: null };
+    }
+
     let parsed = parseSharkResponse(rawText, runningOut, otherActive);
 
     let retries = 0;
     while (parsed.json && !hasValidDealTerms(parsed.json) && retries < MAX_RETRIES) {
       retries++;
-      console.warn(
-        `[pitch/turn] Invalid deal terms for ${sharkId} — retry ${retries}/${MAX_RETRIES}`,
-      );
+      console.warn(`[pitch/turn] Invalid deal terms for ${sharkId} — retry ${retries}/${MAX_RETRIES}`);
       rawText = await callGeminiForShark(sharkId, payload);
+      if (isSilentResponse(rawText)) {
+        return { sharkId, silent: true as const, parsed: null };
+      }
       parsed = parseSharkResponse(rawText, runningOut, otherActive);
     }
 
-    // Still invalid after retries → §16 fallback (Shark goes out)
     if (parsed.json && !hasValidDealTerms(parsed.json)) {
       console.warn(`[pitch/turn] ${sharkId} still invalid after retries — §16 fallback`);
       parsed = parseSharkResponse(buildFallbackResponse(sharkId), runningOut, otherActive);
     }
 
-    const json = parsed.json;
-    const displayText = parsed.displayText;
+    return { sharkId, silent: false as const, parsed };
+  }
 
-    const line: SharkLine = { sharkId, text: displayText };
-    if (json.decision === "offer") {
-      line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
-      runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
-    } else if (json.decision === "pass") {
-      line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
+  /** Simple heuristic: does the text end with a question mark? */
+  function looksLikeQuestion(text: string): boolean {
+    return /\?\s*$/.test(text.replace(/```[\s\S]*?```/g, "").replace(/\{[\s\S]*?\}\s*$/, "").trim());
+  }
+
+  if (isRoundStart || roundAtStart === 2) {
+    // ── ROUND 2 (including auto-opener): Call ALL active sharks in parallel ───
+    const activeSharks = SHARK_ORDER.filter((id) => !runningOut.includes(id));
+
+    // For the round opener, tell sharks to fire their first grilling question
+    const openerHint: RoundTurnEntry | null = isRoundStart
+      ? {
+          speaker: "pitcher",
+          content:
+            "[SYSTEM: Round 2 has just started. The pitcher has not spoken yet. You are opening the grilling. Ask your single most important question based on what you heard in Round 1. Be direct. No pleasantries.]",
+        }
+      : null;
+
+    const tempPitch: PitchState = {
+      ...session.pitch,
+      out: runningOut,
+      roundTurns: openerHint ? [...runningRoundTurns, openerHint] : runningRoundTurns,
+      spokenThisRound: runningSpoken,
+      questionsAsked: runningQuestionsAsked,
+      consecutiveLowEffort: newConsecutiveLowEffort,
+    };
+
+    const results = await Promise.all(
+      activeSharks.map((id) => callShark(id, tempPitch)),
+    );
+
+    for (const result of results) {
+      if (result.silent || !result.parsed) continue;
+
+      const { sharkId, parsed } = result;
+      const json = parsed.json;
+      const displayText = parsed.displayText;
+
+      const line: SharkLine = { sharkId, text: displayText };
+      if (json.decision === "offer") {
+        line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
+        runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
+      } else if (json.decision === "pass") {
+        line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
+      }
+      lines.push(line);
+
+      if (json.status === "out" && !runningOut.includes(sharkId)) {
+        runningOut.push(sharkId);
+      }
+      if (looksLikeQuestion(displayText)) {
+        runningQuestionsAsked[sharkId] = (runningQuestionsAsked[sharkId] ?? 0) + 1;
+      }
+      runningRoundTurns.push({ speaker: sharkId, content: displayText });
+      if (!runningSpoken.includes(sharkId)) runningSpoken.push(sharkId);
     }
-    lines.push(line);
 
-    // Update running state for the next call in the chain
-    if (json.status === "out" && !runningOut.includes(sharkId)) {
-      runningOut.push(sharkId);
+    // Track whether all sharks were silent this turn (triggers round advance)
+    const nonSilentCount = results.filter((r) => !r.silent).length;
+    const allSilentThisTurn = nonSilentCount === 0 && activeSharks.length > 0;
+    if (allSilentThisTurn) {
+      // Force round completion by marking all as spoken
+      for (const id of activeSharks) {
+        if (!runningSpoken.includes(id)) runningSpoken.push(id);
+      }
     }
-    runningRoundTurns.push({ speaker: sharkId, content: displayText });
-    if (!runningSpoken.includes(sharkId)) runningSpoken.push(sharkId);
+  } else {
+    // ── ROUNDS 1 & 3: Sequential chain (one speaker at a time) ──────────────
+    let currentSpeaker: SharkId | null = getFirstSpeaker(session.pitch);
+    let chainDepth = 0;
 
-    lastNextSpeaker = json.nextSpeaker;
-    lastNextAfterPitcher = json.nextAfterPitcher;
+    while (currentSpeaker !== null && chainDepth < MAX_CHAIN_DEPTH) {
+      const sharkId = currentSpeaker;
+      chainDepth++;
 
-    // Continue chain only if the Shark handed off to another in-Shark.
-    // §7 override: if any active Shark hasn't spoken this round yet,
-    // redirect the chain to them (presentation order) instead of
-    // following a cross-talk handoff that would skip them.
-    if (json.status === "out" || json.nextSpeaker === "pitcher") {
-      currentSpeaker = null;
-    } else {
-      const activeNow = SHARK_ORDER.filter((id) => !runningOut.includes(id));
-      const unspokenNow = activeNow.filter((id) => !runningSpoken.includes(id));
+      const tempPitch: PitchState = {
+        ...session.pitch,
+        out: runningOut,
+        roundTurns: runningRoundTurns,
+        spokenThisRound: runningSpoken,
+        questionsAsked: runningQuestionsAsked,
+        consecutiveLowEffort: newConsecutiveLowEffort,
+      };
 
-      if (unspokenNow.length > 0) {
-        const requested = json.nextSpeaker as SharkId;
-        currentSpeaker = unspokenNow.includes(requested) ? requested : unspokenNow[0];
+      const result = await callShark(sharkId, tempPitch);
+
+      if (result.silent || !result.parsed) {
+        currentSpeaker = null;
+        continue;
+      }
+
+      const json = result.parsed.json;
+      const displayText = result.parsed.displayText;
+
+      const line: SharkLine = { sharkId, text: displayText };
+      if (json.decision === "offer") {
+        line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
+        runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
+      } else if (json.decision === "pass") {
+        line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
+      }
+      lines.push(line);
+
+      if (json.status === "out" && !runningOut.includes(sharkId)) {
+        runningOut.push(sharkId);
+      }
+      if (looksLikeQuestion(displayText)) {
+        runningQuestionsAsked[sharkId] = (runningQuestionsAsked[sharkId] ?? 0) + 1;
+      }
+      runningRoundTurns.push({ speaker: sharkId, content: displayText });
+      if (!runningSpoken.includes(sharkId)) runningSpoken.push(sharkId);
+
+      lastNextSpeaker = json.nextSpeaker;
+      lastNextAfterPitcher = json.nextAfterPitcher;
+
+      // Continue chain only if the Shark handed off to another in-Shark
+      if (json.status === "out" || json.nextSpeaker === "pitcher") {
+        currentSpeaker = null;
       } else {
-        const next = json.nextSpeaker as SharkId;
-        currentSpeaker = !runningOut.includes(next) ? next : null;
+        const activeNow = SHARK_ORDER.filter((id) => !runningOut.includes(id));
+        const unspokenNow = activeNow.filter((id) => !runningSpoken.includes(id));
+
+        if (unspokenNow.length > 0) {
+          const requested = json.nextSpeaker as SharkId;
+          currentSpeaker = unspokenNow.includes(requested) ? requested : unspokenNow[0];
+        } else {
+          const next = json.nextSpeaker as SharkId;
+          currentSpeaker = !runningOut.includes(next) ? next : null;
+        }
       }
     }
   }
@@ -221,10 +391,17 @@ export async function POST(req: Request) {
 
   const finalActive = SHARK_ORDER.filter((id) => !runningOut.includes(id));
 
-  // Round completes when every in-at-round-start Shark has spoken (or gone out) this round
-  const roundComplete = session.pitch.inAtRoundStart.every(
-    (id) => runningSpoken.includes(id) || runningOut.includes(id),
-  );
+  // Round 2 completes only when ALL active sharks go silent in a single turn
+  // (the all-silent flag above force-marks them as spoken to trigger this).
+  // Rounds 1 & 3 complete when every in-at-round-start shark has spoken or gone out.
+  const roundComplete =
+    roundAtStart === 2
+      ? session.pitch.inAtRoundStart.every(
+          (id) => runningSpoken.includes(id) || runningOut.includes(id),
+        ) && lines.length === 0  // only advance if nobody actually spoke this turn
+      : session.pitch.inAtRoundStart.every(
+          (id) => runningSpoken.includes(id) || runningOut.includes(id),
+        );
 
   let nextRound = session.pitch.round;
   let shouldEndPitch = false;
@@ -246,7 +423,8 @@ export async function POST(req: Request) {
 
   let endData: PitchTurnResponse["endData"];
   if (shouldEndPitch) {
-    const scores = buildEndScores(runningOut, runningOffers);
+    const finalTranscript = [...session.pitch.fullTranscript, ...runningRoundTurns];
+    const scores = await buildEndScores(runningOut, runningOffers, finalTranscript);
     endData = {
       sharkScores: scores,
       improvementTips: [
@@ -268,23 +446,31 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Enrich lines with TTS audio ──────────────────────────────────────────────
+
+  const linesWithAudio = await enrichSharkLinesWithTts(lines);
+
   // ── Persist session state ───────────────────────────────────────────────────
 
   updateSession(sessionId, (prev) => {
     const roundAdvanced = nextRound !== prev.pitch.round;
-    const activeAtTurnStart = SHARK_ORDER.filter((id) => !prev.pitch.out.includes(id));
+    // Use runningOut (post-turn) so sharks that went out this turn don't get future messages
+    const activeAtTurnStart = SHARK_ORDER.filter((id) => !runningOut.includes(id));
 
     // Write pitcher message as "user" into every active Shark's thread,
     // then each Shark's display text as "assistant" into their own thread.
     // The round-context message used during calls is ephemeral — not persisted.
+    // __round_start__ is a system trigger — never written to agent history.
     const agentHistory = { ...prev.pitch.agentHistory };
-    for (const id of activeAtTurnStart) {
-      agentHistory[id] = [
-        ...prev.pitch.agentHistory[id],
-        { role: "user" as const, content: message },
-      ];
+    if (!isRoundStart) {
+      for (const id of activeAtTurnStart) {
+        agentHistory[id] = [
+          ...prev.pitch.agentHistory[id],
+          { role: "user" as const, content: message },
+        ];
+      }
     }
-    for (const line of lines) {
+    for (const line of linesWithAudio) {
       agentHistory[line.sharkId] = [
         ...agentHistory[line.sharkId],
         { role: "assistant" as const, content: line.text },
@@ -308,6 +494,8 @@ export async function POST(req: Request) {
         nextSpeaker: lastNextSpeaker,
         nextAfterPitcher: lastNextAfterPitcher,
         offers: runningOffers,
+        questionsAsked: runningQuestionsAsked,
+        consecutiveLowEffort: newConsecutiveLowEffort,
       },
       endState: outcome ?? "active",
     };
@@ -318,7 +506,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     round: nextRound,
     spokenInRound,
-    lines,
+    lines: linesWithAudio,
     activeSharks: finalActive,
     shouldEndPitch,
     outcome,

@@ -4,14 +4,14 @@ export const SHARK_ORDER: SharkId[] = ["mark", "kevin", "barbara"];
 
 export const SHARK_LABEL: Record<SharkId, string> = {
   mark: "Big Money Tony",
-  kevin: "Kevin O'Leary",
-  barbara: "Barbara Corcoran",
+  kevin: "Victor Greed",
+  barbara: "Nana Hartwell",
 };
 
 export const SHARK_ROLE: Record<SharkId, string> = {
   mark: "Tech Billionaire · Sold SnapByte · Third Espresso",
-  kevin: "Mr. Wonderful & O'Leary Funds",
-  barbara: "Real Estate Mogul & The Corcoran Group",
+  kevin: "Wall Street Raider · Hostile Takeovers · Cold Cash",
+  barbara: "Self-Made Mogul · $400M Empire · Grandma With a Knife",
 };
 
 

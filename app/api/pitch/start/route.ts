@@ -146,18 +146,11 @@ export async function POST(req: Request) {
 
   const trimmed = pitchText.trim();
 
-  // Step 1 — Validate (fast Gemini call)
-  const validation = await validatePitch(trimmed);
-  if (!validation.valid) {
-    const payload: PitchStartResponse = {
-      valid: false,
-      reason: validation.reason ?? "That doesn't look like a valid business pitch. Try again.",
-    };
-    return NextResponse.json(payload);
-  }
-
-  // Step 2 — Perplexity research (best-effort, 5s timeout)
-  const marketContext = await fetchMarketResearch(trimmed);
+  // No validation gate — sharks react to whatever the user says in character.
+  // Perplexity research is best-effort (10s timeout), skipped on short/irrelevant input.
+  const marketContext = trimmed.split(/\s+/).length > 10
+    ? await fetchMarketResearch(trimmed)
+    : null;
 
   // Step 3 — Persist pitch text + market context to session
   updateSession(sessionId, (prev) => ({

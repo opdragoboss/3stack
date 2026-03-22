@@ -99,5 +99,22 @@ function buildMessages(sharkId: SharkId, pitch: PitchState): ChatMessage[] {
 
   msgs.push({ role: "user", content: roundContent });
 
+  // Forced exit injection: if this shark has asked 3+ questions, force a decision
+  const qCount = pitch.questionsAsked?.[sharkId] ?? 0;
+  if (qCount >= 3 && pitch.round < 3) {
+    msgs.push({
+      role: "user",
+      content: `[SYSTEM: You have asked ${qCount} questions already. You MUST now make a decision — either say "I'm out" with a memorable exit line, or wait for Round 3 to make an offer. No more questions. Set status to "out" and decision to "pass" in your JSON if you're going out.]`,
+    });
+  }
+
+  // Low-effort warning: if user gave 2+ consecutive low-effort answers
+  if ((pitch.consecutiveLowEffort ?? 0) >= 2) {
+    msgs.push({
+      role: "user",
+      content: `[SYSTEM: The pitcher has given ${pitch.consecutiveLowEffort} consecutive low-effort answers (short, vague, or dismissive). This is a strong signal they are not serious. You should strongly consider going out unless you have a very compelling reason to stay.]`,
+    });
+  }
+
   return msgs;
 }

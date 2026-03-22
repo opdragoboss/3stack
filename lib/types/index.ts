@@ -78,6 +78,10 @@ export interface PitchState {
   nextAfterPitcher?: SharkId | null;
   /** Offers accumulated across all turns — keyed by SharkId */
   offers: Partial<Record<SharkId, { amount: number; equity: number }>>;
+  /** How many questions each shark has asked — used for forced exit injection */
+  questionsAsked: Partial<Record<SharkId, number>>;
+  /** Consecutive low-effort user answers (< 10 words). Reset on a real answer. */
+  consecutiveLowEffort: number;
 }
 
 export interface SessionSnapshot {

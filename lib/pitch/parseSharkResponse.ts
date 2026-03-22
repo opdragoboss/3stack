@@ -157,6 +157,12 @@ export function parseSharkResponse(
     nextAfterPitcher: (j["nextAfterPitcher"] as SharkId | null) ?? null,
   };
 
+  // Force consistency: decision "pass" always means status "out"
+  if (result.decision === "pass") {
+    result.status = "out";
+    result.done = true;
+  }
+
   fixHandoff(result, outSharks, activeSharks);
 
   return { displayText: extracted.cleaned, json: result, parseError: false };

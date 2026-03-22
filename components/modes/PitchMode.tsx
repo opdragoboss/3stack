@@ -11,7 +11,6 @@ import { TypingIndicator } from "@/components/pitch/TypingIndicator";
 import { useOrCreateSessionId } from "@/hooks/useOrCreateSessionId";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
 import { SHARK_ORDER, SHARK_LABEL, SHARK_MSG_STYLE } from "@/lib/constants/sharks";
-import { TANK_OPENING_LINES } from "@/lib/constants/tank-opening";
 import { cn } from "@/lib/utils";
 import type {
   PitchRound,
@@ -24,7 +23,6 @@ import type {
 
 type PitchPhase =
   | "waiting_session"
-  | "opening"
   | "ready_to_pitch"
   | "validating"
   | "researching"
@@ -41,6 +39,16 @@ interface SpeechQueueItem {
   sharkId: SharkId;
   text: string;
   isReaction?: boolean;
+  audioUrl?: string | null;
+}
+
+function shuffleArray<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 export function PitchMode() {
@@ -59,8 +67,6 @@ export function PitchMode() {
   const [isAITyping, setIsAITyping] = useState(false);
   const [roundTransition, setRoundTransition] = useState<PitchRound | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const openingSeededRef = useRef(false);
-  const openingStartedRef = useRef(false);
 
   // ── Speech queue state ────────────────────────────────────
   const [speechQueue, setSpeechQueue] = useState<SpeechQueueItem[]>([]);
@@ -75,87 +81,124 @@ export function PitchMode() {
     endData: Record<string, unknown>;
   } | null>(null);
 
+  // Deferred round transition (show overlay AFTER speech queue drains, not before)
+  const pendingRoundRef = useRef<PitchRound | null>(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isAITyping]);
 
-  /** Sharks speak first — seed opening queue once session is ready. */
+  /** Go straight to pitch input once session is ready — no opening lines. */
   useEffect(() => {
-    if (!sessionId || openingSeededRef.current) return;
-    openingSeededRef.current = true;
-    const lines = TANK_OPENING_LINES.map((l) => ({ sharkId: l.sharkId, text: l.text }));
-    setSpeechQueue(lines);
-    setPhase("opening");
-    // Mark that the queue has been seeded so the drain watcher can trust the length
-    setTimeout(() => { openingStartedRef.current = true; }, 0);
+    if (!sessionId) return;
+    setPhase((prev) => (prev === "waiting_session" ? "ready_to_pitch" : prev));
   }, [sessionId]);
 
-  /** After ALL opening lines have drained, hand the floor to the founder. */
-  useEffect(() => {
-    if (phase !== "opening") return;
-    if (!openingStartedRef.current) return;
-    if (speechQueue.length > 0 || currentSpeech) return;
-    setPhase("ready_to_pitch");
-  }, [phase, speechQueue.length, currentSpeech]);
-
-  // ── Word-by-word streaming effect ─────────────────────────
+  // ── Speech: ElevenLabs audio when present, else word-by-word ─
   useEffect(() => {
     if (!currentSpeech) {
       setSpeakingShark(null);
       return;
     }
 
-    const { sharkId, text, isReaction } = currentSpeech;
-    const words = text.split(/\s+/);
-    let wordIndex = 0;
+    const { sharkId, text, isReaction, audioUrl } = currentSpeech;
     let cancelled = false;
 
     setSpeakingShark(sharkId);
-    setStreamedText(words[0] ?? "");
 
-    const interval = setInterval(() => {
+    const commitAndAdvance = () => {
       if (cancelled) return;
-      wordIndex++;
-      if (wordIndex >= words.length) {
-        clearInterval(interval);
-        setStreamedText(text);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `shark-${sharkId}-${Date.now()}-${Math.random()}`,
+          sender: "shark" as const,
+          content: text,
+          timestamp: new Date(),
+          sharkId,
+          isReaction,
+        },
+      ]);
+      setStreamedText("");
+      setTimeout(() => {
+        if (cancelled) return;
+        setSpeechQueue((prev) => prev.slice(1));
+      }, 400);
+    };
 
-        // Pause for reading, then commit to chat and advance
-        setTimeout(() => {
-          if (cancelled) return;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `shark-${sharkId}-${Date.now()}-${Math.random()}`,
-              sender: "shark" as const,
-              content: text,
-              timestamp: new Date(),
-              sharkId,
-              isReaction,
-            },
-          ]);
-          setStreamedText("");
+    const runTextStreamFallback = () => {
+      const words = text.split(/\s+/);
+      let wordIndex = 0;
+      setStreamedText(words[0] ?? "");
 
-          // Brief gap before next speaker
+      const interval = setInterval(() => {
+        if (cancelled) return;
+        wordIndex++;
+        if (wordIndex >= words.length) {
+          clearInterval(interval);
+          setStreamedText(text);
           setTimeout(() => {
             if (cancelled) return;
-            setSpeechQueue((prev) => prev.slice(1));
-          }, 400);
-        }, 600);
-      } else {
-        setStreamedText(words.slice(0, wordIndex + 1).join(" "));
-      }
-    }, 65);
+            commitAndAdvance();
+          }, 600);
+        } else {
+          setStreamedText(words.slice(0, wordIndex + 1).join(" "));
+        }
+      }, 65);
+
+      return () => clearInterval(interval);
+    };
+
+    if (audioUrl) {
+      setStreamedText(text);
+      const audio = new Audio(audioUrl);
+      let clearTextInterval: (() => void) | null = null;
+
+      const onEnded = () => {
+        if (cancelled) return;
+        commitAndAdvance();
+      };
+
+      const onError = () => {
+        if (cancelled || clearTextInterval) return;
+        clearTextInterval = runTextStreamFallback();
+      };
+
+      audio.addEventListener("ended", onEnded);
+      audio.addEventListener("error", onError);
+      void audio.play().catch(() => onError());
+
+      return () => {
+        cancelled = true;
+        audio.pause();
+        audio.removeEventListener("ended", onEnded);
+        audio.removeEventListener("error", onError);
+        if (clearTextInterval) clearTextInterval();
+      };
+    }
+
+    const clearTextInterval = runTextStreamFallback();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTextInterval();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSpeech]);
 
-  // ── Navigate when queue drains + deferred end data ────────
+  // ── Handle queue drain: round transition, then end navigation ────────
   useEffect(() => {
-    if (isSharksResponding || !deferredEndRef.current) return;
+    if (isSharksResponding) return;
+
+    // Pending round advance (fires after last shark's audio finishes)
+    if (pendingRoundRef.current !== null) {
+      const newRound = pendingRoundRef.current;
+      pendingRoundRef.current = null;
+      advanceRound(newRound);
+      return;
+    }
+
+    if (!deferredEndRef.current) return;
     const { isDeal, endData } = deferredEndRef.current;
     deferredEndRef.current = null;
     const timer = setTimeout(() => {
@@ -176,6 +219,10 @@ export function PitchMode() {
     setTimeout(() => {
       setRound(newRound);
       setRoundTransition(null);
+      // Round 2 opens with the sharks firing first — no user message needed
+      if (newRound === 2) {
+        void executeTurn("__round_start__");
+      }
     }, 1400);
   }
 
@@ -183,13 +230,16 @@ export function PitchMode() {
     setIsAITyping(true);
     setSpeakingShark(null);
 
-    const userMsg: PitchMessage = {
-      id: `user-${Date.now()}`,
-      sender: "user",
-      content: userText,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
+    // Don't show system round-start pings as user messages
+    if (userText !== "__round_start__") {
+      const userMsg: PitchMessage = {
+        id: `user-${Date.now()}`,
+        sender: "user",
+        content: userText,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+    }
 
     try {
       const res = await fetch("/api/pitch/turn", {
@@ -202,7 +252,7 @@ export function PitchMode() {
       const data = (await res.json()) as PitchTurnResponse;
 
       if (data.round !== round) {
-        advanceRound(data.round);
+        pendingRoundRef.current = data.round;
       }
 
       for (const line of data.lines) {
@@ -225,13 +275,23 @@ export function PitchMode() {
       const serverOut = SHARK_ORDER.filter((id) => !data.activeSharks.includes(id));
       setOutSharks(serverOut);
 
+      // Build speech queue — main lines and reactions each shuffled
       const queue: SpeechQueueItem[] = [];
-      for (const line of data.lines) {
-        queue.push({ sharkId: line.sharkId, text: line.text });
+      for (const line of shuffleArray(data.lines)) {
+        queue.push({
+          sharkId: line.sharkId,
+          text: line.text,
+          audioUrl: line.audioUrl,
+        });
       }
       if (data.reactionLines?.length) {
-        for (const line of data.reactionLines) {
-          queue.push({ sharkId: line.sharkId, text: line.text, isReaction: true });
+        for (const line of shuffleArray(data.reactionLines)) {
+          queue.push({
+            sharkId: line.sharkId,
+            text: line.text,
+            isReaction: true,
+            audioUrl: line.audioUrl,
+          });
         }
       }
 
@@ -253,9 +313,11 @@ export function PitchMode() {
       setSpeechQueue(queue);
 
       if (queue.length > 0) {
-        setSpeakingShark(queue[0].sharkId);
-        const firstWords = queue[0].text.split(/\s+/);
-        setStreamedText(firstWords[0] ?? "");
+        const first = queue[0];
+        setSpeakingShark(first.sharkId);
+        setStreamedText(
+          first.audioUrl ? first.text : (first.text.split(/\s+/)[0] ?? ""),
+        );
       }
     } catch {
       setMessages((prev) => [
@@ -274,7 +336,6 @@ export function PitchMode() {
   async function submit() {
     if (!sessionId || !input.trim() || isBusy) return;
     if (
-      phase === "opening" ||
       phase === "waiting_session" ||
       phase === "validating" ||
       phase === "researching"
@@ -285,7 +346,6 @@ export function PitchMode() {
     if (phase === "ready_to_pitch" || phase === "invalid") {
       const pitchText = input.trim();
       setInput("");
-      setInvalidReason("");
       setPhase("validating");
 
       try {
@@ -296,35 +356,14 @@ export function PitchMode() {
         });
 
         if (res.status === 404) {
-          // Session expired (e.g. dev server restarted) — reload to get a fresh one
           sessionStorage.removeItem("shark_session_id");
           window.location.reload();
           return;
         }
         if (!res.ok) throw new Error(await res.text());
-        const data = (await res.json()) as PitchStartResponse;
 
-        if (!data.valid) {
-          const reason =
-            data.reason ?? "That doesn't look like a valid business pitch.";
-          setInvalidReason(reason);
-          setInput(pitchText);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `pitch-reject-${Date.now()}`,
-              sender: "shark",
-              content: reason,
-              timestamp: new Date(),
-            },
-          ]);
-          setPhase("invalid");
-          setIsAITyping(false);
-          return;
-        }
-
-        setPhase("researching");
-        await new Promise((r) => setTimeout(r, 600));
+        // No validation gate — always proceed to the tank.
+        // Sharks will react in character to whatever was said.
         setPhase("in-tank");
         await executeTurn(pitchText);
       } catch {
@@ -431,9 +470,9 @@ export function PitchMode() {
             {messages.length === 0 && !isAITyping && (
               <div className="flex h-full items-center justify-center">
                 <p className="max-w-md text-center text-sm leading-relaxed text-zinc-500">
-                  {phase === "opening" || phase === "waiting_session"
-                    ? "The Sharks speak first — listen up…"
-                    : "When it’s your turn, use the box below — business, ask amount, and equity."}
+                  {phase === "waiting_session"
+                    ? "Entering the tank..."
+                    : "You’re up. Pitch your business, how much you’re raising, and the equity you’re offering."}
                 </p>
               </div>
             )}
@@ -510,8 +549,7 @@ export function PitchMode() {
                 rows={2}
                 disabled={
                   isBusy ||
-                  phase === "opening" ||
-                  phase === "waiting_session" ||
+                              phase === "waiting_session" ||
                   phase === "validating" ||
                   phase === "researching"
                 }
@@ -523,8 +561,7 @@ export function PitchMode() {
                 disabled={
                   isBusy ||
                   !input.trim() ||
-                  phase === "opening" ||
-                  phase === "waiting_session" ||
+                              phase === "waiting_session" ||
                   phase === "validating" ||
                   phase === "researching"
                 }
