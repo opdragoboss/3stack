@@ -67,7 +67,8 @@ export async function callGeminiForShark(
     clearTimeout(timeout);
 
     if (!res.ok) {
-      console.warn(`[pitch/turn] OpenAI ${res.status} for ${sharkId} — §16 fallback`);
+      const errBody = await res.text().catch(() => "");
+      console.warn(`[pitch/turn] OpenAI ${res.status} for ${sharkId} — ${errBody.slice(0, 300)}`);
       return buildFallbackResponse(sharkId);
     }
 

@@ -24,6 +24,7 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       round: 1,
       turnInRound: 0,
       out: [],
+      conversationThread: [],
       agentHistory: { mark: [], kevin: [], barbara: [] },
       roundTurns: [],
       fullTranscript: [],
@@ -32,6 +33,8 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       offers: {},
       questionsAsked: {},
       consecutiveLowEffort: 0,
+      sessionRedFlags: 0,
+      totalUserResponses: 0,
     },
     endState: "active",
   };

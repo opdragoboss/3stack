@@ -28,7 +28,8 @@ async function validateOrCreate(existingId: string, entry: SessionEntry): Promis
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId: existingId, message: "__ping__" }),
   });
-  if (res.status === 404) {
+  // 404 = session gone (server restart), 400 = session ended or invalid — either way, start fresh
+  if (!res.ok) {
     sessionStorage.removeItem(STORAGE_KEY);
     return initSession(entry);
   }

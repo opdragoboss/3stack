@@ -255,7 +255,9 @@ export function PitchMode() {
         pendingRoundRef.current = data.round;
       }
 
-      for (const line of data.lines) {
+      // Update offers from main lines AND reaction lines
+      const allLines = [...data.lines, ...(data.reactionLines ?? [])];
+      for (const line of allLines) {
         if (line.decision) {
           setOffers((prev) =>
             prev.map((o) =>

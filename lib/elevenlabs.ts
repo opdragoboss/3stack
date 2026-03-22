@@ -71,7 +71,7 @@ export async function synthesizeMp3DataUrl(
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_multilingual_v2",
+      model_id: "eleven_flash_v2_5",
     }),
   });
 

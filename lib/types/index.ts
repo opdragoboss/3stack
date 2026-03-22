@@ -40,6 +40,13 @@ export interface ResearchState {
   summary?: string;
 }
 
+/** One message in the shared conversation thread — every participant's messages in one array */
+export interface ThreadMessage {
+  role: "user" | "assistant";
+  name: "pitcher" | SharkId;
+  content: string;
+}
+
 export interface PitchState {
   round: PitchRound;
   turnInRound: number;
@@ -52,13 +59,18 @@ export interface PitchState {
   askAmount?: number;
   equityPercent?: number;
   /**
-   * Each Shark's own Gemini/ADK thread for the whole session (§3).
+   * SHARED conversation thread — every message from every participant in one array.
+   * Each shark sees the full room context, formatted so they know who said what.
+   */
+  conversationThread: ThreadMessage[];
+  /**
+   * Each Shark's own Gemini/ADK thread for the whole session (legacy — kept for scoring).
    * Not shared across Sharks — append pitcher lines to all active threads,
    * Shark reply only to that Shark's own thread.
    */
   agentHistory: Record<SharkId, ChatMessage[]>;
   /**
-   * Chronological log for the current round only — pitcher + Sharks in real time order (§8).
+   * Chronological log for the current round only — pitcher + Sharks in real time order.
    * Cleared when round increments. Used to build "earlier this round" injection.
    */
   roundTurns: RoundTurnEntry[];
@@ -68,7 +80,7 @@ export interface PitchState {
    * already asked and answered — prevents duplicate questions across rounds.
    */
   fullTranscript: RoundTurnEntry[];
-  /** Sharks who were in when this round started — used to check round-completion (§7) */
+  /** Sharks who were in when this round started — used to check round-completion */
   inAtRoundStart: SharkId[];
   /** Which inAtRoundStart Sharks have taken at least one speaking turn this round */
   spokenThisRound: SharkId[];
@@ -82,6 +94,10 @@ export interface PitchState {
   questionsAsked: Partial<Record<SharkId, number>>;
   /** Consecutive low-effort user answers (< 10 words). Reset on a real answer. */
   consecutiveLowEffort: number;
+  /** Cumulative red flag score across the session */
+  sessionRedFlags: number;
+  /** Total user responses in Round 2 (used to force transition to Round 3) */
+  totalUserResponses: number;
 }
 
 export interface SessionSnapshot {
