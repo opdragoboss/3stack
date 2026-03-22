@@ -23,8 +23,11 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
     pitch: {
       round: 1,
       turnInRound: 0,
-      out: [] as SharkId[],
-      history: [],
+      out: [],
+      agentHistory: { mark: [], kevin: [], barbara: [] },
+      roundTurns: [],
+      inAtRoundStart: ["mark", "kevin", "barbara"] as SharkId[],
+      spokenThisRound: [],
     },
     endState: "active",
   };

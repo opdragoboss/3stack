@@ -28,6 +28,12 @@ export interface ChatMessage {
   content: string;
 }
 
+/** One entry in the within-round chronological transcript (§8) */
+export interface RoundTurnEntry {
+  speaker: "pitcher" | SharkId;
+  content: string;
+}
+
 export interface ResearchState {
   messages: ChatMessage[];
   /** Filled when transitioning to Pitch Mode */
@@ -37,15 +43,33 @@ export interface ResearchState {
 export interface PitchState {
   round: PitchRound;
   turnInRound: number;
+  /** Sharks eliminated — never speak again */
   out: SharkId[];
-  /** Injected read-only context for Sharks — not shown as user-visible transcript */
+  /** Perplexity summary — fetched once per pitch, injected into every Shark's context */
   marketContext?: string;
-  /** From Research Mode or collected at pitch time */
+  /** Pitch details */
   business?: string;
   askAmount?: number;
   equityPercent?: number;
-  /** Conversation history for context passing to LLM agents */
-  history: ChatMessage[];
+  /**
+   * Each Shark's own Gemini/ADK thread for the whole session (§3).
+   * Not shared across Sharks — append pitcher lines to all active threads,
+   * Shark reply only to that Shark's own thread.
+   */
+  agentHistory: Record<SharkId, ChatMessage[]>;
+  /**
+   * Chronological log for the current round only — pitcher + Sharks in real time order (§8).
+   * Cleared when round increments. Used to build "earlier this round" injection.
+   */
+  roundTurns: RoundTurnEntry[];
+  /** Sharks who were in when this round started — used to check round-completion (§7) */
+  inAtRoundStart: SharkId[];
+  /** Which inAtRoundStart Sharks have taken at least one speaking turn this round */
+  spokenThisRound: SharkId[];
+  /** Last resolved handoff from §14 JSON — who speaks next */
+  nextSpeaker?: "pitcher" | SharkId;
+  /** When nextSpeaker is "pitcher", which Shark comes after the founder replies */
+  nextAfterPitcher?: SharkId | null;
 }
 
 export interface SessionSnapshot {
