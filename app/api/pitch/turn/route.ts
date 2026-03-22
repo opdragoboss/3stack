@@ -43,17 +43,31 @@ function buildEndScores(
 }
 
 /**
- * Resolve which Shark speaks first this turn, driven by §14 handoff fields.
- *
- * Priority order:
- * 1. nextSpeaker is a SharkId (cross-talk handed off before user replied)
- * 2. nextAfterPitcher (user just replied to a pitcher prompt)
- * 3. First in-order active Shark (round opener / fallback)
+ * Resolve which Shark speaks first this turn, driven by §14 handoff fields
+ * **with the §7 stall override**: if any active Shark hasn't spoken this
+ * round yet, they take priority so the round can complete. Handoffs are
+ * still respected when they point to an unspoken Shark.
  */
 function getFirstSpeaker(pitch: PitchState): SharkId | null {
   const active = SHARK_ORDER.filter((id) => !pitch.out.includes(id));
   if (active.length === 0) return null;
 
+  const unspoken = active.filter((id) => !pitch.spokenThisRound.includes(id));
+
+  if (unspoken.length > 0) {
+    // Respect handoff if it already targets an unspoken Shark
+    if (pitch.nextSpeaker && pitch.nextSpeaker !== "pitcher") {
+      const ns = pitch.nextSpeaker as SharkId;
+      if (unspoken.includes(ns)) return ns;
+    }
+    if (pitch.nextAfterPitcher && unspoken.includes(pitch.nextAfterPitcher)) {
+      return pitch.nextAfterPitcher;
+    }
+    // §7 override: next unspoken Shark in presentation order
+    return unspoken[0];
+  }
+
+  // Everyone has spoken — follow normal handoff chain
   if (pitch.nextSpeaker && pitch.nextSpeaker !== "pitcher") {
     const ns = pitch.nextSpeaker as SharkId;
     if (active.includes(ns)) return ns;
@@ -271,6 +285,9 @@ export async function POST(req: Request) {
         out: runningOut,
         agentHistory,
         roundTurns: roundAdvanced ? [] : runningRoundTurns,
+        fullTranscript: roundAdvanced
+          ? [...prev.pitch.fullTranscript, ...runningRoundTurns]
+          : [...prev.pitch.fullTranscript],
         spokenThisRound: roundAdvanced ? [] : runningSpoken,
         inAtRoundStart: roundAdvanced ? finalActive : prev.pitch.inAtRoundStart,
         nextSpeaker: lastNextSpeaker,

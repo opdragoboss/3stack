@@ -26,6 +26,7 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       out: [],
       agentHistory: { mark: [], kevin: [], barbara: [] },
       roundTurns: [],
+      fullTranscript: [],
       inAtRoundStart: ["mark", "kevin", "barbara"] as SharkId[],
       spokenThisRound: [],
     },

@@ -62,6 +62,12 @@ export interface PitchState {
    * Cleared when round increments. Used to build "earlier this round" injection.
    */
   roundTurns: RoundTurnEntry[];
+  /**
+   * Cumulative transcript of all completed rounds.
+   * Appended at round advance so Sharks in later rounds know what was
+   * already asked and answered — prevents duplicate questions across rounds.
+   */
+  fullTranscript: RoundTurnEntry[];
   /** Sharks who were in when this round started — used to check round-completion (§7) */
   inAtRoundStart: SharkId[];
   /** Which inAtRoundStart Sharks have taken at least one speaking turn this round */

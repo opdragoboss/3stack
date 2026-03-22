@@ -68,21 +68,30 @@ function buildSystemInstruction(sharkId: SharkId, marketContext?: string): strin
 /**
  * Builds the messages array for this Shark:
  * 1. That Shark's own full history across all rounds (user/assistant pairs).
- * 2. A final user message with the within-round transcript so the model
+ * 2. A context message with the full prior-rounds transcript (if any) so
+ *    the Shark knows what every other Shark asked and what was answered.
+ * 3. A final user message with the within-round transcript so the model
  *    can react to what has happened earlier this round before it speaks.
- *
- * The round context message is only appended when there are prior turns this round.
  */
 function buildMessages(sharkId: SharkId, pitch: PitchState): ChatMessage[] {
   const history = pitch.agentHistory[sharkId];
-  const transcript = formatRoundTranscript(pitch.roundTurns);
+  const msgs: ChatMessage[] = [...history];
 
-  if (!transcript) return [...history];
+  const priorTranscript = formatRoundTranscript(pitch.fullTranscript);
+  if (priorTranscript) {
+    msgs.push({
+      role: "user",
+      content: `[PRIOR ROUNDS — these questions have already been asked and answered. Do NOT repeat them; build on them or explore new angles]\n${priorTranscript}`,
+    });
+  }
 
-  const roundContextMessage: ChatMessage = {
-    role: "user",
-    content: `[What has happened earlier this round — react naturally if relevant]\n${transcript}`,
-  };
+  const roundTranscript = formatRoundTranscript(pitch.roundTurns);
+  if (roundTranscript) {
+    msgs.push({
+      role: "user",
+      content: `[What has happened earlier THIS round — react naturally, do not re-ask anything already covered]\n${roundTranscript}`,
+    });
+  }
 
-  return [...history, roundContextMessage];
+  return msgs;
 }
