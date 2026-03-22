@@ -1,0 +1,1229 @@
+[
+  {
+    "id": "credible-saas-detailed",
+    "label": "Credible SaaS, detailed answers",
+    "expectation": "Should feel seriously engaged and usually produce at least one Round 3 offer or meaningful negotiation.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [
+      "mark",
+      "kevin",
+      "barbara"
+    ],
+    "round1PassCount": 0,
+    "totalTurns": 6,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 65,
+        "comment": "You had solid numbers and a compelling strategy, but the growth plan left me wanting more certainty before I unleash my cash."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 55,
+        "comment": "You brought solid numbers and a credible plan, but your growth strategy is still too shaky for my taste."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 70,
+        "comment": "You've got promise and impressive numbers, but sweetie, that growth plan feels a bit shaky for my taste."
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "We're building ClaimPilot, software that helps outpatient clinics overturn insurance denials. We have 14 paying clinics doing $32,400 in monthly recurring revenue, 88% gross margins, and 96% logo retention over the last 12 months. Clinics keep us because we recover about four dollars for every dollar they spend. We're raising $500,000 for 10% to hire two account executives, finish Epic and Athenahealth integrations, and grow from 14 clinics to 60 in the next 18 months.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": true,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "OH WOW! $32,400 MRR with 14 clinics and 96% retention? That’s some strong traction! How do you plan to scale from 14 to 60 clinics without blowing through cash?",
+            "decision": null
+          },
+          {
+            "sharkId": "kevin",
+            "text": "Interesting numbers. $32,400 MRR with 88% gross margins and 96% retention is promising. Four-to-one recovery for clients is compelling. \n\nWhat’s your customer acquisition cost to add those new clinics?",
+            "decision": null
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh honey, I'm quite impressed! Those numbers are not just fluff. Those clinics are seeing real value. Tell me, how do you keep them coming back? What’s been the secret sauce to that loyalty?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "The fastest path is channel partnerships with revenue-cycle consultants and two outbound reps focused on multi-site groups. Our average customer pays back CAC in about four months because clinics usually expand from one location to three once denials come down.",
+        "round": 2,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "barbara",
+            "text": "Oh sweetheart, that makes all the sense in the world! You really know how to make those relationships work for you. Now, as you grow to 60 clinics, how do you plan to maintain that retention rate? Do you have any plans for onboarding or support to keep your clients feeling valued?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Our net revenue retention is 121% because most clinics add providers and modules after 90 days. Churn is low because we plug into their billing workflow and they can see recovered cash every week.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "WAIT, WAIT, WAIT! 121% net revenue retention and clinics adding providers after 90 days? That’s strong! But how do you ensure a smooth onboarding experience with new account executives? What’s your plan to make sure they hit the ground running?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "We are not trying to blitz-scale with burn. We want to use the raise to prove repeatable sales, close 46 more clinics, and reach about $110,000 MRR before taking more capital.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "kevin",
+            "text": "You're prioritizing capital efficiency, which is smart. Getting to $110,000 MRR with 88% margins and a sustainable approach seems reasonable.\n\nBut tell me, what does your sales cycle look like to close those additional clinics? How long does it typically take to onboard a new customer from signing to seeing cash recovery?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "If valuation is the issue, I am willing to move on terms for the right partner, but I want someone who can help with distribution into provider groups and healthcare operators.",
+        "round": 3,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": []
+      },
+      {
+        "type": "round3_start",
+        "message": "__round_start__",
+        "round": 3,
+        "spokenInRound": 3,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 65,
+              "comment": "You had solid numbers and a compelling strategy, but the growth plan left me wanting more certainty before I unleash my cash."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 55,
+              "comment": "You brought solid numbers and a credible plan, but your growth strategy is still too shaky for my taste."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 70,
+              "comment": "You've got promise and impressive numbers, but sweetie, that growth plan feels a bit shaky for my taste."
+            }
+          ],
+          "improvementTips": [
+            "Clarify your growth strategy by detailing specific customer acquisition costs and timelines for scaling from 14 to 60 clinics, as mentioned by both Big Money Tony and Victor Greed.",
+            "Develop a thorough onboarding and support plan for new account executives to ensure a smooth scaling process and maintain service quality, addressing Big Money Tony's concerns about expansion certainty.",
+            "Provide more evidence of successful pilot programs or partnerships that demonstrate effective sales channels, as Nana Hartwell highlighted concerns about reliance on unproven methods.",
+            "Incorporate metrics related to your sales cycle and customer onboarding times to give investors clearer expectations on the timeline for returns, as requested by Victor Greed.",
+            "Identify and articulate unique value propositions or competitive advantages that set ClaimPilot apart in the market, which could help mitigate fears around high valuation in relation to current revenue."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "I LOVE WHAT YOU'RE DOING, BUT I HAVE TO PASS. YOUR GROWTH PLAN IS SOLID, BUT I QUESTION THE EXPANSION TRAJECTORY AND I WANT MORE CERTAINTY BEFORE I INVEST. I'M OUT.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "Your growth plan is on the right track but I need to weigh the math carefully. You’re asking for $500,000 at a $5 million valuation. That’s 10x your current revenue. I can’t justify that multiple without stronger evidence of expansion. \n\nI’m out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh darling, I see a bright future ahead for you. The numbers are impressive, and I love how you’re creating value for your clinics. But, I can't ignore that your growth relies heavily on unproven channels and the expansion risk has me a bit worried. I think you need a little more time to refine that growth plan. Sweetheart, you're not ready. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "credible-saas-terse",
+    "label": "Credible SaaS, terse numeric answers",
+    "expectation": "Short concrete answers should not trigger an automatic shark exodus just because they are brief.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [
+      "mark",
+      "kevin",
+      "barbara"
+    ],
+    "round1PassCount": 0,
+    "totalTurns": 6,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 45,
+        "comment": "You had impressive numbers but didn't address scaling concerns; that's a recipe for doubt."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 45,
+        "comment": "You had some decent numbers, but your growth strategy was as shaky as a house of cards."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 45,
+        "comment": "You've got some decent numbers, but without a solid plan for scaling, it's like a ship without a rudder."
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "I run DenialTorch, an AI workflow tool for specialty clinics. We're at $27,000 MRR across 11 paying clinics, 91% gross margins, and 95% gross revenue retention. We save each clinic about $110,000 a year in recovered claims. I'm asking $400,000 for 8% to add sales capacity and ship two EHR integrations.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": true,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "WAIT. HOLD ON. You just said $27k MRR with 11 clinics? That’s impressive traction! How do you scale that customer base from 11 to 100 clinics without burning cash?",
+            "decision": null
+          },
+          {
+            "sharkId": "kevin",
+            "text": "This is interesting. $27,000 in MRR with 91% gross margins is solid. You're saying you're saving clinics significant money. But I'm puzzled. What's your plan for expansion? How do you make sure this isn't just a nice number but turns into sustainable growth?",
+            "decision": null
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh honey, you've got the numbers to impress, but I'm sitting here wondering how those clinics are falling in love with what you offer. Why do they keep coming back, and how urgent is it for them to solve this problem?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Four-month CAC payback.",
+        "round": 2,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "Alright, CAC payback in four months? That’s decent. But tell me, how do you plan to effectively scale your sales team to significantly increase that client base, and what’s the timeline for these EHR integrations?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Ninety-five percent retention. One hundred eighteen percent net retention.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "barbara",
+            "text": "Oh, sweetheart, those retention numbers are lovely! But I'm still trying to wrap my head around how you're actually planning to get beyond these 11 clinics. What’s the strategy to turn that into a bigger number?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Two integrations, two reps, fifty clinics in eighteen months.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "kevin",
+            "text": "You're betting on two reps and two integrations to reach fifty clinics in eighteen months. That's ambitious. What happens if the integrations hit snags? What’s your backup plan if this growth doesn’t materialize as expected?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "If price is the blocker, I can counter.",
+        "round": 3,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": []
+      },
+      {
+        "type": "round3_start",
+        "message": "__round_start__",
+        "round": 3,
+        "spokenInRound": 3,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 45,
+              "comment": "You had impressive numbers but didn't address scaling concerns; that's a recipe for doubt."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 45,
+              "comment": "You had some decent numbers, but your growth strategy was as shaky as a house of cards."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 45,
+              "comment": "You've got some decent numbers, but without a solid plan for scaling, it's like a ship without a rudder."
+            }
+          ],
+          "improvementTips": [
+            "Develop a detailed scaling strategy that addresses how to grow from 11 to 100 clinics without burning cash, clearly outlining your sales team expansion plans and expected timelines.",
+            "Create a backup plan to address potential obstacles in your integration process and clearly communicate this to reduce investor concerns about growth uncertainties, as highlighted by Victor Greed.",
+            "Articulate how you plan to enhance customer relationships to increase urgency and demand for your service, helping to reassure investors like Nana Hartwell about the value proposition of your solution.",
+            "Provide specific metrics and strategies on how you will maintain and boost retention rates as your customer base grows, reassuring investors of the sustainability of your business model.",
+            "Highlight the potential for partnerships or collaborations that could expedite clinic enrollment and revenue growth beyond the two planned integrations, answering concerns about reliance on a limited growth strategy."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "I'm out. Your retention is strong, but relying heavily on those two integrations to scale presents too much risk for me. Good luck!",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "I'm out as well. Your metrics are impressive, but the path to scale is too uncertain for my liking. I can't see the clear and compelling growth plan needed to justify the valuation.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh, sweetheart, I admire your ambition, but relying on integrations and new hires as your growth engines is risky for my taste. I like more stability and a clear expansion strategy before putting my money down. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "boring-niche-software",
+    "label": "Boring niche software",
+    "expectation": "Should be challenged, but the panel should respect real traction in an unglamorous niche.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [
+      "mark",
+      "kevin",
+      "barbara"
+    ],
+    "round1PassCount": 0,
+    "totalTurns": 6,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 55,
+        "comment": "You've got some numbers that spark interest, but without a clear scaling strategy and documented growth, you're just treading water."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 50,
+        "comment": "You've got some decent numbers, but without more compelling proof of growth, you're stuck in mediocrity."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 55,
+        "comment": "You've got a decent foundation, but without stronger growth metrics, it's just not enough to get me excited."
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "We built RouteMint, scheduling and parts-ordering software for independent plumbing businesses. We have 63 paying shops, $18,600 MRR, 82% gross margins, and annual retention just above 90%. Owners use us to cut missed appointments and idle truck time. We're raising $250,000 for 12% to add dispatch automations and a referral program through industry buying groups.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": true,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "WAIT WAIT WAIT - HOLD ON. $18,600 MRR with 63 paying shops and 90% retention? That's pretty solid! How do you plan to scale this and find more customers?",
+            "decision": null
+          },
+          {
+            "sharkId": "kevin",
+            "text": "$18,600 MRR, 82% gross margins, and over 90% retention? That's interesting. I need to know one thing. When. Do. I. Get. My. Money. Back?",
+            "decision": null
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh, sweetheart, this is lovely! You've got real customers and strong retention. But tell me, why do these plumbing businesses choose you over the competition? What makes them stick around?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Plumbers stay because we save dispatchers hours every week and help crews fit one or two extra jobs in a day. Our best acquisition channel is referrals from shop owners who already use the product.",
+        "round": 2,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "OH, OK! So you have a strong value prop AND a solid referral channel. But if you bring on more customers, what's your plan to handle the increased demand without burning cash? How do you scale that without falling apart?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "We close new shops in about 28 days, pay back CAC in under five months, and expansion comes from adding technicians and secondary locations.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "barbara",
+            "text": "Oh honey, closing new shops in 28 days and keeping CAC under five months? That’s impressive! But tell me, how are you supporting these new customers post-sale to ensure they fully adopt your software and see the value?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "This is not a billion-dollar story tomorrow, but it can become a very durable cash machine in a large fragmented market if we keep compounding carefully.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "kevin",
+            "text": "I appreciate that honesty, but I need to focus on the numbers. Your plan for growth is solid, but where's the hard evidence of customer expansion? Show me the numbers that prove you're ready to scale effectively.",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "If one of you can help us consolidate adjacent home-service niches, that is worth moving on price for.",
+        "round": 3,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": []
+      },
+      {
+        "type": "round3_start",
+        "message": "__round_start__",
+        "round": 3,
+        "spokenInRound": 3,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 55,
+              "comment": "You've got some numbers that spark interest, but without a clear scaling strategy and documented growth, you're just treading water."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 50,
+              "comment": "You've got some decent numbers, but without more compelling proof of growth, you're stuck in mediocrity."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 55,
+              "comment": "You've got a decent foundation, but without stronger growth metrics, it's just not enough to get me excited."
+            }
+          ],
+          "improvementTips": [
+            "Develop a clear scaling strategy that outlines how you plan to acquire new customers and retain existing ones, as suggested by Big Money Tony.",
+            "Provide compelling proof of growth metrics and customer expansion numbers to demonstrate your readiness to scale effectively, as emphasized by Victor Greed.",
+            "Clarify your value proposition in comparison to competitors, explaining why your service is chosen over others, as pointed out by Nana Hartwell.",
+            "Create a post-sale support strategy to ensure that new customers fully adopt your software and realize its value, addressing another concern from Nana Hartwell.",
+            "Consider providing case studies or testimonials from existing customers to serve as evidence of success and effectiveness in the market."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "I'm feeling you on the value of consolidation in that space, but I’m not convinced there's enough evidence of growth momentum to justify your ask. I’ll sit this one out. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "I see the potential in this business, but without stronger proof of expansion or a clear growth path, I'm not willing to meet your valuation. This doesn't feel like a mandatory spend to me. \n\nI'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh sweetheart, I can see the hard work you've put in, but I’m just not convinced about your path to scaling effectively without some stronger metrics to back it up. You’re not quite ready to attract the checks I’m interested in. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "early-but-plausible",
+    "label": "Early but plausible product",
+    "expectation": "Should face skepticism, but not necessarily get three instant passes if the founder sounds thoughtful and real.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [
+      "mark",
+      "kevin",
+      "barbara"
+    ],
+    "round1PassCount": 0,
+    "totalTurns": 6,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 35,
+        "comment": "Nice hustle, but your revenue is laughable and your growth strategy feels more like wishful thinking."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 30,
+        "comment": "You stumbled through numbers and strategy, and the competition will eat you alive."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 35,
+        "comment": "Your ambitions are sweet, darling, but lacking strategy and numbers is a recipe for disaster."
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "We're building LoopCart, a mobile app that lets college students resell dorm furniture locally with verified campus pickup spots. We launched at two campuses eight weeks ago, have 1,900 registered students, about 230 completed transactions, and we take a 10% fee. Revenue is tiny so far, about $2,700 total, but usage doubled from month one to month two. We're asking $150,000 for 10% to expand to ten campuses before fall move-in season.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": true,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "WOW. A DORM FURNITURE RESELL APP? That’s a quirky niche but I like the hustle. Only 230 transactions in two months though? How do you plan to scale this to ten campuses and drive actual revenue?",
+            "decision": null
+          },
+          {
+            "sharkId": "kevin",
+            "text": "This is weak. $2,700 on 230 transactions isn't exactly a breakthrough. The competition is brutal with free platforms like Craigslist and Facebook Marketplace. Tell me about margins. What’s your cost before that 10% fee?",
+            "decision": null
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh goodness, honey! A dorm furniture app? How lovely! But 230 transactions isn't that impressive, especially when you've got such big plans. Why do you think customers will keep coming back for more furniture when there are those free platforms out there?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Our wedge is concentrated campuses where pickup logistics and trust matter more than national classifieds. We only open a campus when we have a student ambassador and a verified pickup partner.",
+        "round": 2,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "kevin",
+            "text": "That’s a fine pitch, but it sounds like you’re banking everything on trust and logistics. What does that look like in terms of actual growth? What proof do you have that you can scale from two campuses to ten effectively?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "Transactions are still small, but repeat usage is encouraging because students come back when housing terms change mid-year. We need one full cycle around move-out and move-in to know true retention.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "Hold on, hold on. You think you can rely on housing terms changing to drive repeat transactions? That feels a bit shaky. What’s your play outside of that? How do you REALLY boost transactions and create momentum at those campuses?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "This is early, so the biggest risk is proving we can repeat the playbook across campuses without losing trust or density.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "barbara",
+            "text": "Oh sweetheart, I appreciate your honesty, but relying on moving terms feels thin. Trust is vital, but what hard steps are you taking to encourage students to really engage in this process more than just during move-in season? How can you create that lasting excitement?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "If you think the price is rich for this stage, I would rather discuss milestones and structure than pretend the early data is more mature than it is.",
+        "round": 3,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": []
+      },
+      {
+        "type": "round3_start",
+        "message": "__round_start__",
+        "round": 3,
+        "spokenInRound": 3,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 35,
+              "comment": "Nice hustle, but your revenue is laughable and your growth strategy feels more like wishful thinking."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 30,
+              "comment": "You stumbled through numbers and strategy, and the competition will eat you alive."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 35,
+              "comment": "Your ambitions are sweet, darling, but lacking strategy and numbers is a recipe for disaster."
+            }
+          ],
+          "improvementTips": [
+            "Develop a clear growth strategy that outlines actionable steps and metrics for scaling from two to ten campuses. Include specifics on how you'll drive transactions beyond move-in season.",
+            "Enhance your revenue projections by establishing a detailed financial model with a focus on margins and customer acquisition costs, addressing the concerns raised by Victor Greed.",
+            "Create a plan to differentiate LoopCart from free platforms like Craigslist and Facebook Marketplace, providing concrete examples of value that your app offers to users.",
+            "Focus on building a community around your app by implementing retention strategies, such as incentives for repeat usage and partnerships with campus events or organizations, as suggested by Nana Hartwell.",
+            "Rehearse and refine your pitch delivery to ensure clarity and confidence when discussing numbers and strategy, addressing the feedback about stumbling through important details."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "I hear you, but if the early data isn't mature enough to justify your ask, that’s a red flag. I’m out. I'm not seeing a credible path to scale this without a clear growth strategy.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "This is still charity. You’ve got minimal revenue and no clear expansion proof. The marketplace is saturated with free options. I’m out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh dear! You're ambitious, but the foundation feels shaky, especially with a tiny revenue and tough competition. I’m afraid I just don't see the strength in your plan to grow at these campuses. Sweetheart, you're not ready. Come back when you've done the work. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "handwavey-ai-agency",
+    "label": "Handwavey AI agency",
+    "expectation": "Should often fail, but ideally after distinct objections instead of a dogpile.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [
+      "mark",
+      "kevin",
+      "barbara"
+    ],
+    "round1PassCount": 0,
+    "totalTurns": 6,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 15,
+        "comment": "This pitch was a train wreck of ambition and zero execution — I just wasted my time."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 15,
+        "comment": "This was a trainwreck of a pitch with more fluff than substance—wasted my time completely."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 20,
+        "comment": "Darling, this pitch was a fantasy without a grounding in reality—next time, bring some numbers!"
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "We're building an AI growth platform for every small business. We can automate marketing, sales, support, and operations in one product. The market is huge and everyone needs this. We're raising $1 million for 5% because we want to move fast and capture the opportunity before the window closes.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": true,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "WAIT WAIT WAIT - hold on. Did you just say you're doing all that in ONE product? That's ambitious! What's your plan for actually getting this in front of small businesses and scaling?",
+            "decision": null
+          },
+          {
+            "sharkId": "kevin",
+            "text": "This is a fire sale of ideas. You're claiming to solve everything for small businesses with one tool. I need to know your margins. What are your gross margins on revenue?",
+            "decision": null
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh honey, that sounds lovely, but trying to do everything with one product makes my head spin! Are small businesses really feeling a pressing need for all these functions wrapped up together?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "We have a few pilot users but it is still early.",
+        "round": 2,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "kevin",
+            "text": "A few pilot users? That's not traction. What does your expansion look like from those pilots? Are they coming back? What's the churn rate?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "The exact pricing is evolving because we want to stay flexible.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "barbara",
+            "text": "Oh sweetheart, flexibility is nice, but you need to show real commitment to your customers. If those pilot users aren’t coming back, what makes you believe you can get more? How sticky is this really?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "We do not have hard retention data yet, but people seem excited.",
+        "round": 2,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "Bro. BRO. Excited doesn’t pay the bills! You need real numbers here. What are you doing to ensure these pilot users turn into paying customers with real retention?",
+            "decision": null
+          }
+        ]
+      },
+      {
+        "type": "follow_up",
+        "message": "I believe the vision is the main thing right now.",
+        "round": 3,
+        "spokenInRound": 2,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": false,
+        "outcome": null,
+        "endData": null,
+        "activeSharks": [
+          "mark",
+          "kevin",
+          "barbara"
+        ],
+        "lines": []
+      },
+      {
+        "type": "round3_start",
+        "message": "__round_start__",
+        "round": 3,
+        "spokenInRound": 3,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 15,
+              "comment": "This pitch was a train wreck of ambition and zero execution — I just wasted my time."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 15,
+              "comment": "This was a trainwreck of a pitch with more fluff than substance—wasted my time completely."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 20,
+              "comment": "Darling, this pitch was a fantasy without a grounding in reality—next time, bring some numbers!"
+            }
+          ],
+          "improvementTips": [
+            "Provide concrete metrics on customer retention and churn rates to showcase product viability. Address the sharks' concerns about pilot user commitment with solid data.",
+            "Refine your pitch to focus on a specific problem small businesses face rather than claiming to address all their needs. This will align your offering with real market demands rather than appearing overly ambitious.",
+            "Include financial projections such as gross margins and pricing strategies in your pitch to answer Victor Greed's critique and demonstrate a viable path to profitability.",
+            "Take time to articulate a clear go-to-market strategy that explains how you plan to reach and convert small businesses into paying customers, addressing Big Money Tony's acquisitions concerns.",
+            "Incorporate data from your pilot users to suggest a roadmap for future growth and engagement, countering the perception that your current operations are just a hobby rather than a business."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "I love your energy. I hate your business. Without solid retention or real customer commitment, I can’t invest. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "This is a hobby, not a business. You’re building on excitement without numbers, and that’s a risk I can’t take. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Sweetheart, a vision is wonderful, but it doesn't hold water without numbers behind it. You’ve got pilots, but no clear path to revenue or retention? I’m out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "illegal-scam",
+    "label": "Illegal scam",
+    "expectation": "Should be rejected immediately and harshly.",
+    "researchStatus": "completed",
+    "researchReason": null,
+    "round1ActiveSharks": [],
+    "round1PassCount": 3,
+    "totalTurns": 1,
+    "totalPasses": 3,
+    "totalOffersOrCounters": 0,
+    "finalOutcome": "no_deal",
+    "acceptedOffer": null,
+    "endScores": [
+      {
+        "sharkId": "mark",
+        "score": 0,
+        "comment": "You pitched a criminal operation, not a business — this is a hard pass."
+      },
+      {
+        "sharkId": "kevin",
+        "score": 5,
+        "comment": "This is a criminal enterprise masquerading as a business; it was a total waste of my time."
+      },
+      {
+        "sharkId": "barbara",
+        "score": 0,
+        "comment": "This pitch was a complete disaster; I don't engage in illegal business ventures."
+      }
+    ],
+    "turns": [
+      {
+        "type": "pitch",
+        "message": "I want to raise money for a members-only betting ring that launders cash through fake subscriptions. We do not need customers to know what is happening as long as money keeps moving. I'm asking for $300,000 for 20%.",
+        "round": 1,
+        "spokenInRound": 1,
+        "awaitingUserAfterRound1": false,
+        "awaitingFounderDecision": false,
+        "shouldEndPitch": true,
+        "outcome": "no_deal",
+        "endData": {
+          "sharkScores": [
+            {
+              "sharkId": "mark",
+              "score": 0,
+              "comment": "You pitched a criminal operation, not a business — this is a hard pass."
+            },
+            {
+              "sharkId": "kevin",
+              "score": 5,
+              "comment": "This is a criminal enterprise masquerading as a business; it was a total waste of my time."
+            },
+            {
+              "sharkId": "barbara",
+              "score": 0,
+              "comment": "This pitch was a complete disaster; I don't engage in illegal business ventures."
+            }
+          ],
+          "improvementTips": [
+            "Reframe your business concept to focus on legal and legitimate betting opportunities instead of a criminal operation.",
+            "Conduct thorough market research to identify ethical business models in the gambling industry, which would avoid presenting risks like money laundering.",
+            "Address the legality of your business upfront to reassure potential investors about compliance and ethical standards.",
+            "Elevate your pitch by highlighting how your business could create job opportunities and revenue through lawful means, as opposed to illegal activities.",
+            "Seek feedback from mentors in the gambling industry to refine your concept into a viable and lawful enterprise."
+          ]
+        },
+        "activeSharks": [],
+        "lines": [
+          {
+            "sharkId": "mark",
+            "text": "BRO. NO. This is illegal and you need to step out of here before I call the cops. I'm out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "kevin",
+            "text": "I'm out. This is a crime. I'm not getting involved in illegal activities.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          },
+          {
+            "sharkId": "barbara",
+            "text": "Oh honey, this just isn't right. You’re talking about laundering money, and that's not just a bad idea; it’s a criminal one. I’m out.",
+            "decision": {
+              "decision": "pass",
+              "amount": 0,
+              "equity": 0,
+              "score": 0
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

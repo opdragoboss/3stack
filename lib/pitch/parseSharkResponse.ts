@@ -1,5 +1,5 @@
 import type { SharkId } from "@/lib/types";
-import { SHARK_ORDER } from "@/lib/constants/sharks";
+import { resolvePromptSharkRef, SHARK_ORDER } from "@/lib/constants/sharks";
 
 /** §14 structured JSON block emitted at the end of every Shark response */
 export interface SharkJson14 {
@@ -81,6 +81,12 @@ function passJson(activeSharks: SharkId[]): SharkJson14 {
     nextSpeaker: "pitcher",
     nextAfterPitcher: activeSharks[0] ?? null,
   };
+}
+
+function parsePromptSpeaker(value: unknown): "pitcher" | SharkId | null {
+  if (value === "pitcher") return "pitcher";
+  if (typeof value !== "string") return null;
+  return resolvePromptSharkRef(value);
 }
 
 /**
@@ -194,6 +200,13 @@ export function parseSharkResponse(
   }
 
   const cleanedText = extracted.cleaned || raw.trimEnd();
+  const nextSpeaker = parsePromptSpeaker(j["nextSpeaker"]) ?? "pitcher";
+  const parsedNextAfterPitcher =
+    j["nextAfterPitcher"] === null ? null : parsePromptSpeaker(j["nextAfterPitcher"]);
+  const nextAfterPitcher: SharkId | null =
+    parsedNextAfterPitcher && parsedNextAfterPitcher !== "pitcher"
+      ? parsedNextAfterPitcher
+      : null;
 
   const result: SharkJson14 = {
     status: status as "in" | "out",
@@ -201,8 +214,8 @@ export function parseSharkResponse(
     decision: decision as "none" | "offer" | "counter" | "pass",
     amount,
     equity,
-    nextSpeaker: ((j["nextSpeaker"] as string) ?? "pitcher") as "pitcher" | SharkId,
-    nextAfterPitcher: (j["nextAfterPitcher"] as SharkId | null) ?? null,
+    nextSpeaker,
+    nextAfterPitcher,
   };
 
   // Force consistency: any explicit or textual "I'm out" means the shark is fully out.

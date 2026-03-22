@@ -6,6 +6,7 @@ import {
   buildDirectorNotes,
   buildRound3Note,
   detectRedFlags,
+  isConcreteShortAnswer,
 } from "@/lib/agents/buildSharkPayload";
 import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
 import { classifySoftPassDecision } from "@/lib/pitch/classifySoftPassDecision";
@@ -593,7 +594,10 @@ export async function POST(req: Request) {
   const runningSessionRedFlags = session.pitch.sessionRedFlags + messageRedFlags;
 
   // ── Low-effort answer tracking ──────────────────────────────────────────
-  const isLowEffort = !isRoundStart && message.trim().split(/\s+/).length < 10;
+  const isLowEffort =
+    !isRoundStart &&
+    message.trim().split(/\s+/).length < 6 &&
+    !isConcreteShortAnswer(message);
   const newConsecutiveLowEffort = isLowEffort
     ? (session.pitch.consecutiveLowEffort ?? 0) + 1
     : 0;

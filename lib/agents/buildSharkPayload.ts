@@ -13,6 +13,11 @@ export interface SharkPromptPayload {
   messages: ChatMessage[];
 }
 
+function formatPromptSpeakerTag(name: ThreadMessage["name"]): string {
+  if (name === "pitcher") return "[PITCHER]";
+  return `[${SHARK_LABEL[name]}]`;
+}
+
 /**
  * Build the messages array from the shared conversation thread.
  * Each shark sees the full room — their own messages as "assistant",
@@ -27,14 +32,88 @@ function buildMessagesForShark(
     if (msg.name === sharkName) {
       messages.push({ role: "assistant", content: msg.content });
     } else {
-      const label =
-        msg.name === "pitcher"
-          ? "[PITCHER]"
-          : `[${msg.name.toUpperCase()}]`;
+      const label = formatPromptSpeakerTag(msg.name);
       messages.push({ role: "user", content: `${label}: ${msg.content}` });
     }
   }
   return messages;
+}
+
+const SHORT_ANSWER_METRIC_TERMS =
+  /\b(mrr|arr|revenue|retention|nrr|margins?|cac|payback|churn|customers?|clients?|clinics?|shops?|users?|transactions?|locations?|reps?|integrations?|onboarding|renewals?|pipeline|roi)\b/i;
+
+export function isConcreteShortAnswer(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+
+  const wordCount = trimmed.split(/\s+/).length;
+  if (wordCount > 8) return false;
+
+  const hasDigitsOrSymbols = /\d/.test(trimmed) || /[$%]/.test(trimmed);
+  const hasMetricTerm = SHORT_ANSWER_METRIC_TERMS.test(trimmed);
+  return hasDigitsOrSymbols || (hasMetricTerm && wordCount >= 2);
+}
+
+function getFounderEvidenceText(pitch: PitchState): string {
+  return [
+    pitch.business ?? "",
+    ...pitch.conversationThread
+      .filter((msg) => msg.name === "pitcher")
+      .map((msg) => msg.content),
+  ].join("\n");
+}
+
+function hasCredibleTraction(pitch: PitchState): boolean {
+  const text = getFounderEvidenceText(pitch);
+
+  const hasRevenue =
+    /\$?\d[\d,.]*(?:\s*(?:k|m|million|thousand))?\s*(?:mrr|arr|monthly recurring revenue|annual recurring revenue|revenue)\b/i.test(
+      text,
+    ) || /\b\d[\d,.]*\s*(?:mrr|arr)\b/i.test(text);
+  const hasCustomers =
+    /\b\d+\s+(?:paying\s+)?(?:customers?|clients?|clinics?|shops?|locations?|providers?|accounts?)\b/i.test(
+      text,
+    );
+  const hasStrongMargin =
+    /\b(?:8\d|9\d|100)%\s*(?:gross\s+)?margins?\b/i.test(text);
+  const hasStrongRetention =
+    /\b(?:8\d|9\d|100|1\d\d)%\s*(?:logo\s+|gross\s+|net\s+)?retention\b/i.test(
+      text,
+    );
+  const hasExecutionDetail =
+    /\b(?:payback|cac|channel|referrals?|integrations?|outbound|sales cycle|onboarding|nrr|net revenue retention|roi|expansion|renewals?)\b/i.test(
+      text,
+    );
+
+  return (
+    hasRevenue &&
+    hasCustomers &&
+    (hasStrongMargin || hasStrongRetention) &&
+    hasExecutionDetail
+  );
+}
+
+function buildCredibleTractionNote(
+  pitch: PitchState,
+  sharkId: SharkId,
+): string | null {
+  if (!hasCredibleTraction(pitch) || pitch.round === 1) return null;
+
+  const roomNote =
+    "\n\n[DIRECTOR NOTE: This founder has a real traction business: paying customers, real revenue, and strong efficiency signals. Stay in investor mode. Push on execution or price, but do not treat this like a toy or a fake company.]";
+
+  if (pitch.round === 2) {
+    return roomNote;
+  }
+
+  switch (sharkId) {
+    case "mark":
+      return `${roomNote}\n\n[DIRECTOR NOTE: In the final round, if your main issue is pace, scale confidence, or price, you should usually put out aggressive terms instead of defaulting to a pass. Only pass if you truly doubt market capture or upside.]`;
+    case "kevin":
+      return `${roomNote}\n\n[DIRECTOR NOTE: In the final round, this is a real cash-generating business. If the unit profile is strong and the price feels rich, counter with colder terms or structure instead of hiding behind generic expansion doubt.]`;
+    case "barbara":
+      return `${roomNote}\n\n[DIRECTOR NOTE: In the final round, if you trust the founder and customers clearly rely on the product, keep the deal alive with tougher terms before you walk. Do not turn 'needs more proof' into a reflex pass on a business that is already working.]`;
+  }
 }
 
 /**
@@ -44,7 +123,8 @@ export function detectRedFlags(message: string): number {
   let flags = 0;
 
   // Only flag truly empty/nonsense responses — not normal short answers
-  const isVeryShort = message.trim().split(/\s+/).length <= 2;
+  const isVeryShort =
+    !isConcreteShortAnswer(message) && message.trim().split(/\s+/).length <= 2;
   const isRefusal =
     /don't want to|dont want to|no comment|none of your business|not telling you|leave me alone|stop asking/i.test(
       message,
@@ -105,10 +185,10 @@ export function buildDirectorNotes(
           "\n\n[DIRECTOR NOTE: This pitch is a disaster. You are going out. Say 'I'm out' in your own style. Make it savage and memorable. 1-2 sentences. Do NOT ask any questions. Include the pass JSON.]";
       }
     } else if (pitch.sessionRedFlags >= 4) {
-      // Shark with most questions asked must go out
+      // Shark with most questions asked is closest to walking
       const tiredShark = getMostQuestionsAsked(activeSharks, pitch.questionsAsked);
       notes[tiredShark] =
-        "\n\n[DIRECTOR NOTE: You've heard enough from this person. You're done. Say 'I'm out' in your style. Include the pass JSON.]";
+        "\n\n[DIRECTOR NOTE: You've heard enough weak answers. You are close to walking. Deliver one final sharp challenge or go out. Do not ask a shopping-list question.]";
       // Other sharks get a warning
       for (const id of activeSharks) {
         if (id !== tiredShark) {
@@ -127,14 +207,14 @@ export function buildDirectorNotes(
   // Question count based injections (per shark)
   for (const id of activeSharks) {
     const qCount = pitch.questionsAsked[id] ?? 0;
-    if (qCount >= 3 && pitch.round < 3) {
-      notes[id] =
-        "\n\n[DIRECTOR NOTE: You have asked enough questions. You MUST now either make an offer or say I'm out. No more questions. Include your JSON.]";
+    if (qCount >= 3 && pitch.round === 2) {
+      notes[id] = (notes[id] ?? "") +
+        "\n\n[DIRECTOR NOTE: You have asked enough fresh questions. Do NOT open a brand-new topic. Pressure-test the weakest answer, react to another shark, or clearly signal where your decision is leaning. No multi-part questions.]";
     }
   }
 
   // Low-effort warning
-  if (pitch.consecutiveLowEffort >= 2) {
+  if (pitch.consecutiveLowEffort >= 3) {
     for (const id of activeSharks) {
       if (!notes[id]?.includes("disaster")) {
         notes[id] = (notes[id] ?? "") +
@@ -157,7 +237,7 @@ export function buildCrossReactionNote(): string {
  * Build the Round 3 forced decision note.
  */
 export function buildRound3Note(): string {
-  return "\n\n[DIRECTOR NOTE: Final round - ONE short beat. Speak 2-3 sentences max, then the JSON block. Your spoken text must make the verdict unmistakable: say 'I'm out' clearly for a pass, or say the exact dollar amount and equity if you are making an offer or counter. Offer, counter, or pass only - no questions, no follow-ups, no cliffhangers. If there is already a live offer in the transcript, react to those terms directly instead of ignoring them. If the business is credible and the main issue is valuation, counter on price instead of defaulting to a pass. Do not make valuation your only point unless the ask is truly disconnected from reality. If you pass on a credible business, name one concrete blocker beyond generic price language.]";
+  return "\n\n[DIRECTOR NOTE: Final round - ONE short beat. Speak 2-3 sentences max, then the JSON block. Your spoken text must make the verdict unmistakable: say 'I'm out' clearly for a pass, or say the exact dollar amount and equity if you are making an offer or counter. Offer, counter, or pass only - no questions, no follow-ups, no cliffhangers. If there is already a live offer in the transcript, react to those terms directly instead of ignoring them. If the business is credible and the main issue is valuation, counter on price instead of defaulting to a pass. Do not make valuation your only point unless the ask is truly disconnected from reality. On a founder with real revenue, real customers, and strong retention or margins, a clean sweep of cautious passes should be rare. If you pass on a credible business, name one concrete structural blocker beyond generic price or 'show me more expansion' language.]";
 }
 
 function hasSharkSpoken(pitch: PitchState, sharkId: SharkId): boolean {
@@ -257,6 +337,11 @@ export function buildSharkPayload(
 
   if (pitch.round === 2 || pitch.round === 3) {
     systemInstruction += buildSharkLaneNote(sharkId, pitch.round);
+  }
+
+  const credibleTractionNote = buildCredibleTractionNote(pitch, sharkId);
+  if (credibleTractionNote) {
+    systemInstruction += credibleTractionNote;
   }
 
   if (pitch.round === 3) {
