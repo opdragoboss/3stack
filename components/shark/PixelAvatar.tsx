@@ -28,8 +28,9 @@ export function PixelAvatar({
 
   useEffect(() => {
     if (state !== "speaking") {
-      setMouthOpen(false);
-      return;
+      // Defer to avoid synchronous setState-in-effect lint error
+      const id = requestAnimationFrame(() => setMouthOpen(false));
+      return () => cancelAnimationFrame(id);
     }
     const interval = setInterval(() => setMouthOpen((v) => !v), 200);
     return () => clearInterval(interval);

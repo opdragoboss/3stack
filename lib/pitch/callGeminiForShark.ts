@@ -1,7 +1,7 @@
 import type { SharkPromptPayload } from "@/lib/agents/buildSharkPayload";
 import type { SharkId } from "@/lib/types";
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const MODEL = "gpt-5-nano";
 const TIMEOUT_MS = 10_000;
 
 /** §16 in-character fallback strings — spoken in the Shark's voice, marks them out */
@@ -16,16 +16,15 @@ const FALLBACK_JSON =
 
 /**
  * Returns the §16 fallback response for a Shark — spoken text + valid §14 JSON.
- * Strips no JSON from display on the client side (the caller should still run parseSharkResponse on this).
  */
 export function buildFallbackResponse(sharkId: SharkId): string {
   return `${FALLBACK_TEXT[sharkId]}\n${FALLBACK_JSON}`;
 }
 
 /**
- * Call the Gemini API for one Shark turn.
+ * Call OpenAI (gpt-5-nano) for one Shark turn.
  *
- * - Maps SharkPromptPayload → Gemini generateContent body.
+ * - Maps SharkPromptPayload → OpenAI chat completions body.
  * - Enforces a 10-second hard timeout (§16).
  * - On any error / timeout / empty response, returns the §16 fallback string.
  */
@@ -33,9 +32,9 @@ export async function callGeminiForShark(
   sharkId: SharkId,
   payload: SharkPromptPayload,
 ): Promise<string> {
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    console.warn(`[pitch/turn] No Gemini API key — §16 fallback for ${sharkId}`);
+    console.warn(`[pitch/turn] No OpenAI API key — §16 fallback for ${sharkId}`);
     return buildFallbackResponse(sharkId);
   }
 
@@ -43,40 +42,42 @@ export async function callGeminiForShark(
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    // Map ChatMessage[] to Gemini "contents" — role "user" stays "user"; "assistant" → "model"
-    const contents = payload.messages.map((m) => ({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: m.content }],
-    }));
+    const messages = [
+      { role: "system" as const, content: payload.systemInstruction },
+      ...payload.messages.map((m) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: m.content,
+      })),
+    ];
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: payload.systemInstruction }] },
-          contents,
-          generationConfig: { temperature: 0.85, maxOutputTokens: 512 },
-        }),
-        signal: controller.signal,
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
-    );
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        max_completion_tokens: 4096,
+      }),
+      signal: controller.signal,
+    });
 
     clearTimeout(timeout);
 
     if (!res.ok) {
-      console.warn(`[pitch/turn] Gemini ${res.status} for ${sharkId} — §16 fallback`);
+      console.warn(`[pitch/turn] OpenAI ${res.status} for ${sharkId} — §16 fallback`);
       return buildFallbackResponse(sharkId);
     }
 
     const data = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      choices?: { message?: { content?: string } }[];
     };
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const text = data?.choices?.[0]?.message?.content ?? "";
     if (!text) {
-      console.warn(`[pitch/turn] Empty Gemini response for ${sharkId} — §16 fallback`);
+      console.warn(`[pitch/turn] Empty OpenAI response for ${sharkId} — §16 fallback`);
       return buildFallbackResponse(sharkId);
     }
 
@@ -84,9 +85,9 @@ export async function callGeminiForShark(
   } catch (err) {
     clearTimeout(timeout);
     if ((err as Error).name === "AbortError") {
-      console.warn(`[pitch/turn] Gemini timed out (>10s) for ${sharkId} — §16 fallback`);
+      console.warn(`[pitch/turn] OpenAI timed out (>10s) for ${sharkId} — §16 fallback`);
     } else {
-      console.warn(`[pitch/turn] Gemini error for ${sharkId}:`, err);
+      console.warn(`[pitch/turn] OpenAI error for ${sharkId}:`, err);
     }
     return buildFallbackResponse(sharkId);
   }
