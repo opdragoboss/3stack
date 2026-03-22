@@ -157,7 +157,7 @@ export function buildCrossReactionNote(): string {
  * Build the Round 3 forced decision note.
  */
 export function buildRound3Note(): string {
-  return "\n\n[DIRECTOR NOTE: Final round. You MUST make your decision now. Either make an offer with the JSON block or say I'm out with the pass JSON. No more questions. Make it dramatic — this is the finale.]";
+  return "\n\n[DIRECTOR NOTE: Final round — ONE short beat. Speak 2–3 sentences max (your verdict in plain language), then the JSON block. Offer OR pass — no questions, no follow-ups, no cliffhangers.]";
 }
 
 /**
@@ -182,7 +182,7 @@ export function buildSharkPayload(
   // Add round context
   const phaseLabel =
     pitch.round === 3
-      ? "DECISION PHASE — you MUST make your final offer (with specific dollar amount and equity percentage) or pass. Do NOT ask any more questions."
+      ? "DECISION PHASE — final offer (exact $ and % in JSON) or pass. Be brief. No questions."
       : pitch.round === 2
         ? "GRILLING PHASE — ask questions only. Do NOT make offers or final decisions yet."
         : "PITCH REACTION — give your gut reaction. Maybe ONE question.";

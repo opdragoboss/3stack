@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic } from "lucide-react";
+import { Send, Mic, SkipForward } from "lucide-react";
 import { SharkCard } from "@/components/shark/SharkCard";
 import { DealBoard } from "@/components/pitch/DealBoard";
 import { RoundIndicator } from "@/components/pitch/RoundIndicator";
@@ -19,6 +19,7 @@ import type {
   PitchStartResponse,
   SharkId,
   SharkOffer,
+  SharkLine,
 } from "@/lib/types";
 
 type PitchPhase =
@@ -40,6 +41,8 @@ interface SpeechQueueItem {
   text: string;
   isReaction?: boolean;
   audioUrl?: string | null;
+  /** From API — used to mark shark out as soon as their line hits the thread */
+  decision?: SharkLine["decision"];
 }
 
 function shuffleArray<T>(items: T[]): T[] {
@@ -66,23 +69,32 @@ export function PitchMode() {
   const [outSharks, setOutSharks] = useState<SharkId[]>([]);
   const [isAITyping, setIsAITyping] = useState(false);
   const [roundTransition, setRoundTransition] = useState<PitchRound | null>(null);
+  /** Session ended (deal / no-deal / game over) — block further input */
+  const [sessionEnded, setSessionEnded] = useState(false);
+  /** Round 1 sharks finished; user must reply before Round 2 begins on the server */
+  const [awaitingAfterR1, setAwaitingAfterR1] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── Speech queue state ────────────────────────────────────
   const [speechQueue, setSpeechQueue] = useState<SpeechQueueItem[]>([]);
+  /** Mirrors `speechQueue` — used so we never nest setMessages inside setSpeechQueue (Strict Mode would duplicate commits). */
+  const speechQueueRef = useRef<SpeechQueueItem[]>([]);
+  speechQueueRef.current = speechQueue;
   const [streamedText, setStreamedText] = useState("");
   const currentSpeech = useMemo(() => speechQueue[0] ?? null, [speechQueue]);
   const isSharksResponding = speechQueue.length > 0;
-  const isBusy = isAITyping || isSharksResponding;
+  const isBusy = isAITyping || isSharksResponding || sessionEnded;
 
   // Deferred end-of-session navigation (waits for queue to drain)
   const deferredEndRef = useRef<{
-    isDeal: boolean;
+    path: "/results/deal" | "/results/no-deal" | "/results/game-over";
     endData: Record<string, unknown>;
   } | null>(null);
 
   // Deferred round transition (show overlay AFTER speech queue drains, not before)
   const pendingRoundRef = useRef<PitchRound | null>(null);
+  /** Current TTS Audio — paused on skip */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -108,22 +120,35 @@ export function PitchMode() {
 
     const commitAndAdvance = () => {
       if (cancelled) return;
-      setMessages((prev) => [
-        ...prev,
+      const prev = speechQueueRef.current;
+      if (prev.length === 0) return;
+      const [first, ...rest] = prev;
+      speechQueueRef.current = rest;
+      setMessages((m) => [
+        ...m,
         {
-          id: `shark-${sharkId}-${Date.now()}-${Math.random()}`,
+          id: `shark-${first.sharkId}-${Date.now()}-${Math.random()}`,
           sender: "shark" as const,
-          content: text,
+          content: first.text,
           timestamp: new Date(),
-          sharkId,
-          isReaction,
+          sharkId: first.sharkId,
+          isReaction: first.isReaction,
         },
       ]);
+      if (first.decision?.decision === "pass") {
+        setOutSharks((prev) =>
+          prev.includes(first.sharkId) ? prev : [...prev, first.sharkId],
+        );
+        setOffers((rows) =>
+          rows.map((row) =>
+            row.sharkId === first.sharkId
+              ? { ...row, amount: 0, equity: 0, status: "out" as const }
+              : row,
+          ),
+        );
+      }
+      setSpeechQueue(rest);
       setStreamedText("");
-      setTimeout(() => {
-        if (cancelled) return;
-        setSpeechQueue((prev) => prev.slice(1));
-      }, 400);
     };
 
     const runTextStreamFallback = () => {
@@ -152,6 +177,7 @@ export function PitchMode() {
     if (audioUrl) {
       setStreamedText(text);
       const audio = new Audio(audioUrl);
+      audioRef.current = audio;
       let clearTextInterval: (() => void) | null = null;
 
       const onEnded = () => {
@@ -171,6 +197,7 @@ export function PitchMode() {
       return () => {
         cancelled = true;
         audio.pause();
+        audioRef.current = null;
         audio.removeEventListener("ended", onEnded);
         audio.removeEventListener("error", onError);
         if (clearTextInterval) clearTextInterval();
@@ -199,11 +226,11 @@ export function PitchMode() {
     }
 
     if (!deferredEndRef.current) return;
-    const { isDeal, endData } = deferredEndRef.current;
+    const { path, endData } = deferredEndRef.current;
     deferredEndRef.current = null;
     const timer = setTimeout(() => {
       sessionStorage.setItem("shark_results", JSON.stringify(endData));
-      router.push(isDeal ? "/results/deal" : "/results/no-deal");
+      router.push(path);
     }, 1500);
     return () => clearTimeout(timer);
   }, [isSharksResponding, router]);
@@ -219,19 +246,51 @@ export function PitchMode() {
     setTimeout(() => {
       setRound(newRound);
       setRoundTransition(null);
-      // Round 2 opens with the sharks firing first — no user message needed
-      if (newRound === 2) {
-        void executeTurn("__round_start__");
-      }
     }, 1400);
+  }
+
+  /** Stop TTS / typing animation, post all queued shark lines at once, unblock input. */
+  function skipAllSpeech() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    const pending = speechQueueRef.current;
+    if (pending.length === 0) return;
+    speechQueueRef.current = [];
+    setMessages((m) => [
+      ...m,
+      ...pending.map((item) => ({
+        id: `shark-${item.sharkId}-skip-${Date.now()}-${Math.random()}`,
+        sender: "shark" as const,
+        content: item.text,
+        timestamp: new Date(),
+        sharkId: item.sharkId,
+        isReaction: item.isReaction,
+      })),
+    ]);
+    const passIds = pending
+      .filter((item) => item.decision?.decision === "pass")
+      .map((item) => item.sharkId);
+    if (passIds.length > 0) {
+      setOutSharks((prev) => [...new Set([...prev, ...passIds])]);
+      setOffers((rows) =>
+        rows.map((row) =>
+          passIds.includes(row.sharkId)
+            ? { ...row, amount: 0, equity: 0, status: "out" as const }
+            : row,
+        ),
+      );
+    }
+    setSpeechQueue([]);
+    setStreamedText("");
   }
 
   async function executeTurn(userText: string) {
     setIsAITyping(true);
     setSpeakingShark(null);
 
-    // Don't show system round-start pings as user messages
-    if (userText !== "__round_start__") {
+    // Don't show system / protocol messages as user chat lines
+    const isAcceptProtocol = /^__accept__(mark|kevin|barbara)__$/.test(userText);
+    if (userText !== "__round_start__" && !isAcceptProtocol) {
       const userMsg: PitchMessage = {
         id: `user-${Date.now()}`,
         sender: "user",
@@ -254,6 +313,8 @@ export function PitchMode() {
       if (data.round !== round) {
         pendingRoundRef.current = data.round;
       }
+
+      setAwaitingAfterR1(!!data.awaitingUserAfterRound1);
 
       // Update offers from main lines AND reaction lines
       const allLines = [...data.lines, ...(data.reactionLines ?? [])];
@@ -284,6 +345,7 @@ export function PitchMode() {
           sharkId: line.sharkId,
           text: line.text,
           audioUrl: line.audioUrl,
+          decision: line.decision,
         });
       }
       if (data.reactionLines?.length) {
@@ -293,25 +355,39 @@ export function PitchMode() {
             text: line.text,
             isReaction: true,
             audioUrl: line.audioUrl,
+            decision: line.decision,
           });
         }
       }
 
-      if (data.shouldEndPitch && data.endData) {
+      if (data.shouldEndPitch) {
+        const outcome = data.outcome ?? "no_deal";
+        const path: "/results/deal" | "/results/no-deal" | "/results/game-over" =
+          outcome === "deal"
+            ? "/results/deal"
+            : outcome === "game_over"
+              ? "/results/game-over"
+              : "/results/no-deal";
+        const endData = data.endData;
         deferredEndRef.current = {
-          isDeal: data.outcome === "deal",
+          path,
           endData: {
-            type: data.outcome === "deal" ? "deal" : "no-deal",
-            sharkId: data.endData.dealSharkId,
-            amount: data.endData.dealAmount,
-            equity: data.endData.dealEquity,
-            sharkScores: data.endData.sharkScores,
-            improvementTips: data.endData.improvementTips,
+            type:
+              outcome === "deal"
+                ? "deal"
+                : outcome === "game_over"
+                  ? "game-over"
+                  : "no-deal",
+            sharkId: endData?.dealSharkId,
+            amount: endData?.dealAmount,
+            equity: endData?.dealEquity,
+            sharkScores: endData?.sharkScores ?? [],
+            improvementTips: endData?.improvementTips ?? [],
           },
         };
+        setSessionEnded(true);
       }
 
-      setIsAITyping(false);
       setSpeechQueue(queue);
 
       if (queue.length > 0) {
@@ -331,6 +407,7 @@ export function PitchMode() {
           timestamp: new Date(),
         },
       ]);
+    } finally {
       setIsAITyping(false);
     }
   }
@@ -538,6 +615,18 @@ export function PitchMode() {
 
           {/* Input Area */}
           <div className="shrink-0 border-t border-slate-700/40 p-4">
+            {isSharksResponding && (
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={skipAllSpeech}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600/50 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-amber-500/40 hover:bg-slate-800 hover:text-zinc-100"
+                >
+                  <SkipForward className="h-3.5 w-3.5" aria-hidden />
+                  Skip dialogue
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-3">
               <textarea
                 value={input}
@@ -546,7 +635,9 @@ export function PitchMode() {
                 placeholder={
                   phase === "ready_to_pitch" || phase === "invalid"
                     ? "Your pitch: business, how much you’re raising, equity offered…"
-                    : "Reply to the Sharks…"
+                    : awaitingAfterR1
+                      ? "The Sharks have spoken — reply before Round 2 (The Grilling)…"
+                      : "Reply to the Sharks…"
                 }
                 rows={2}
                 disabled={

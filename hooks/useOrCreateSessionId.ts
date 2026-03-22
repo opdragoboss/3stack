@@ -23,10 +23,10 @@ async function initSession(entry: SessionEntry): Promise<string> {
  * clears it and creates a fresh one.
  */
 async function validateOrCreate(existingId: string, entry: SessionEntry): Promise<string> {
-  const res = await fetch("/api/pitch/turn", {
+  const res = await fetch("/api/session/ping", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: existingId, message: "__ping__" }),
+    body: JSON.stringify({ sessionId: existingId }),
   });
   // 404 = session gone (server restart), 400 = session ended or invalid — either way, start fresh
   if (!res.ok) {

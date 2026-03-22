@@ -35,6 +35,9 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       consecutiveLowEffort: 0,
       sessionRedFlags: 0,
       totalUserResponses: 0,
+      lastRound2Speaker: null,
+      round2SpeakCounts: {},
+      awaitingUserAfterRound1: false,
     },
     endState: "active",
   };

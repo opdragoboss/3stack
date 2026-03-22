@@ -4,13 +4,13 @@ import { SHARK_ORDER, SHARK_LABEL } from "@/lib/constants/sharks";
 import {
   buildSharkPayload,
   buildDirectorNotes,
-  buildCrossReactionNote,
   buildRound3Note,
   detectRedFlags,
 } from "@/lib/agents/buildSharkPayload";
 import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
 import { parseSharkResponse, hasValidDealTerms } from "@/lib/pitch/parseSharkResponse";
 import { enrichSharkLinesWithTts } from "@/lib/elevenlabs";
+import { extractChatCompletionText } from "@/lib/openai/extractChatContent";
 import type {
   PitchTurnRequest,
   PitchTurnResponse,
@@ -22,9 +22,11 @@ import type {
   RoundTurnEntry,
   PitchState,
   ThreadMessage,
+  SessionSnapshot,
 } from "@/lib/types";
 
 const MAX_RETRIES = 2;
+const SCORING_MODEL = process.env.OPENAI_SCORING_MODEL ?? "gpt-4o-mini";
 
 // ── Scoring ─────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ async function scoreShark(
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "gpt-5-nano",
+        model: SCORING_MODEL,
         messages: [
           { role: "system", content: `You are ${SHARK_LABEL[sharkId]}, a shark investor. Stay in character. Respond only with valid JSON.` },
           { role: "user", content: scoringPrompt },
@@ -81,8 +83,8 @@ async function scoreShark(
       return { sharkId, score: fallbackScore, comment: fallbackComment };
     }
 
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data?.choices?.[0]?.message?.content?.trim() ?? "";
+    const data = (await res.json()) as unknown;
+    const raw = extractChatCompletionText(data).trim();
 
     if (!raw) {
       console.warn(`[scoring] Empty response for ${sharkId} — using fallback score`);
@@ -128,6 +130,60 @@ async function buildEndScores(
       return scoreShark(id, transcriptText, outcome);
     }),
   );
+}
+
+/** Message `__accept__<sharkId>__` — lock in an existing offer and end (deal win). */
+async function respondAcceptOffer(
+  sessionId: string,
+  session: SessionSnapshot,
+  sharkId: SharkId,
+): Promise<NextResponse> {
+  const offer = session.pitch.offers[sharkId];
+  if (!offer) {
+    return NextResponse.json({ error: "No offer from that shark to accept." }, { status: 400 });
+  }
+
+  const runningOut = [...session.pitch.out];
+  const runningOffers = { ...session.pitch.offers };
+  const runningRoundTurns = [...session.pitch.roundTurns];
+  const finalTranscript = [...session.pitch.fullTranscript, ...runningRoundTurns];
+  const scores = await buildEndScores(runningOut, runningOffers, finalTranscript);
+
+  const endData: NonNullable<PitchTurnResponse["endData"]> = {
+    sharkScores: scores,
+    improvementTips: [
+      "Sharpen your unit economics — know your CAC, LTV, and payback period cold",
+      "Research your top 3 competitors and articulate exactly why you win",
+      "Lead with traction: revenue, users, or growth rate — not just the vision",
+      "Practice your ask — be specific about how you'll deploy the investment",
+      "Show a clear path to profitability, not just a growth-at-all-costs story",
+    ],
+    dealSharkId: sharkId,
+    dealAmount: offer.amount,
+    dealEquity: offer.equity,
+  };
+
+  updateSession(sessionId, (prev) => ({
+    ...prev,
+    endState: "deal",
+    pitch: {
+      ...prev.pitch,
+      offers: runningOffers,
+    },
+  }));
+
+  const finalActive = SHARK_ORDER.filter((id) => !runningOut.includes(id));
+
+  return NextResponse.json({
+    round: session.pitch.round,
+    spokenInRound: session.pitch.round,
+    lines: [],
+    activeSharks: finalActive,
+    awaitingUserAfterRound1: false,
+    shouldEndPitch: true,
+    outcome: "deal" as const,
+    endData,
+  } satisfies PitchTurnResponse);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -186,6 +242,43 @@ async function callShark(
   return { sharkId, silent: false as const, parsed };
 }
 
+/** Pick one active shark for Round 2: avoid same as last unless they're the only option; weight toward lower speak counts. */
+function pickNextSharkForRound2(
+  activeSharks: SharkId[],
+  lastSpeaker: SharkId | null,
+  speakCounts: Partial<Record<SharkId, number>>,
+  exclude: Set<SharkId>,
+): SharkId | null {
+  let eligible = activeSharks.filter((id) => id !== lastSpeaker && !exclude.has(id));
+  if (eligible.length === 0) {
+    eligible = activeSharks.filter((id) => !exclude.has(id));
+  }
+  if (eligible.length === 0) return null;
+
+  const weights = eligible.map((id) => 1 / (1 + (speakCounts[id] ?? 0)));
+  const sum = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * sum;
+  for (let i = 0; i < eligible.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return eligible[i];
+  }
+  return eligible[eligible.length - 1];
+}
+
+async function callSharkSafe(
+  sharkId: SharkId,
+  pitch: PitchState,
+  runningOut: SharkId[],
+  directorNote?: string,
+): Promise<Awaited<ReturnType<typeof callShark>> | null> {
+  try {
+    return await callShark(sharkId, pitch, runningOut, directorNote);
+  } catch (err) {
+    console.error(`[pitch/turn] ${sharkId} failed:`, err);
+    return null;
+  }
+}
+
 // ── Main route handler ──────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -210,6 +303,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session has already ended" }, { status: 400 });
   }
 
+  const acceptMatch = message.match(/^__accept__(mark|kevin|barbara)__$/);
+  if (acceptMatch) {
+    return respondAcceptOffer(sessionId, session, acceptMatch[1] as SharkId);
+  }
+
   // Ping: used by the client to validate the session without triggering a real turn
   if (message === "__ping__") {
     return NextResponse.json({
@@ -217,13 +315,21 @@ export async function POST(req: Request) {
       lines: [],
       activeSharks: SHARK_ORDER.filter((id) => !session.pitch.out.includes(id)),
       shouldEndPitch: false,
+      awaitingUserAfterRound1: session.pitch.awaitingUserAfterRound1 ?? false,
     } satisfies PitchTurnResponse);
   }
 
   // ── Setup ─────────────────────────────────────────────────────────────────
 
   const isRoundStart = message === "__round_start__";
-  const roundAtStart = session.pitch.round;
+  /** First message after Round 1 ends — advances to Round 2 for this request only */
+  const isRound1Bridge =
+    session.pitch.round === 1 &&
+    (session.pitch.awaitingUserAfterRound1 ?? false) &&
+    !isRoundStart &&
+    message !== "__ping__";
+  const roundAtStart = isRound1Bridge ? 2 : session.pitch.round;
+  let runningAwaitingUserAfterRound1 = session.pitch.awaitingUserAfterRound1 ?? false;
   const runningOut: SharkId[] = [...session.pitch.out];
   const runningThread: ThreadMessage[] = [...session.pitch.conversationThread];
   const runningRoundTurns: RoundTurnEntry[] = isRoundStart
@@ -238,6 +344,10 @@ export async function POST(req: Request) {
   const runningQuestionsAsked: Partial<Record<SharkId, number>> = {
     ...session.pitch.questionsAsked,
   };
+  let runningLastRound2Speaker: SharkId | null = session.pitch.lastRound2Speaker ?? null;
+  let runningRound2SpeakCounts: Partial<Record<SharkId, number>> = {
+    ...(session.pitch.round2SpeakCounts ?? {}),
+  };
 
   // ── Red flag detection on user message ──────────────────────────────────
   const messageRedFlags = isRoundStart ? 0 : detectRedFlags(message);
@@ -249,7 +359,7 @@ export async function POST(req: Request) {
     ? (session.pitch.consecutiveLowEffort ?? 0) + 1
     : 0;
 
-  // ── Track user responses in Round 2 ─────────────────────────────────────
+  // ── Track user responses in Round 2 (includes the bridge message from Round 1 → 2) ──
   let runningTotalUserResponses = session.pitch.totalUserResponses;
   if (!isRoundStart && roundAtStart === 2) {
     runningTotalUserResponses++;
@@ -263,6 +373,7 @@ export async function POST(req: Request) {
   // ── Build temp pitch state for LLM calls ────────────────────────────────
   const buildTempPitch = (): PitchState => ({
     ...session.pitch,
+    round: roundAtStart,
     out: runningOut,
     conversationThread: runningThread,
     roundTurns: runningRoundTurns,
@@ -293,7 +404,11 @@ export async function POST(req: Request) {
     }
     targetLines.push(line);
 
-    if (json.status === "out" && !runningOut.includes(sharkId)) {
+    // Pass / out must update immediately for activeSharks — don't rely on status alone (models sometimes mismatch).
+    if (
+      (json.decision === "pass" || json.status === "out") &&
+      !runningOut.includes(sharkId)
+    ) {
       runningOut.push(sharkId);
     }
     if (looksLikeQuestion(displayText)) {
@@ -313,29 +428,15 @@ export async function POST(req: Request) {
     const activeSharks = SHARK_ORDER.filter((id) => !runningOut.includes(id));
     const tempPitch = buildTempPitch();
 
-    // Step 1: Call all 3 sharks in parallel (initial reactions)
+    // Call all 3 sharks in parallel — they give initial reactions
+    // No cross-reaction round here; sharks see each other's responses
+    // naturally in Round 2 via the shared conversation thread.
     const results = await Promise.all(
-      activeSharks.map((id) => callShark(id, tempPitch, runningOut)),
+      activeSharks.map((id) => callSharkSafe(id, tempPitch, runningOut)),
     );
 
     for (const result of results) {
-      processSharkResult(result, lines);
-    }
-
-    // Step 2: Cross-reaction round — sharks react to each other
-    // Only if there are still active sharks and we got responses
-    const activeAfterReactions = SHARK_ORDER.filter((id) => !runningOut.includes(id));
-    if (activeAfterReactions.length > 0 && lines.length > 0) {
-      const crossPitch = buildTempPitch();
-      const crossNote = buildCrossReactionNote();
-
-      const crossResults = await Promise.all(
-        activeAfterReactions.map((id) => callShark(id, crossPitch, runningOut, crossNote)),
-      );
-
-      for (const result of crossResults) {
-        processSharkResult(result, reactionLines);
-      }
+      if (result) processSharkResult(result, lines);
     }
   }
 
@@ -364,22 +465,47 @@ export async function POST(req: Request) {
 
       const callPitch = buildTempPitch();
 
-      // Call ALL active sharks in parallel
-      const results = await Promise.all(
-        activeSharks.map((id) => callShark(id, callPitch, runningOut, directorNotes[id])),
-      );
+      // One shark per turn — shared thread still has full context for the next speaker
+      const exclude = new Set<SharkId>();
+      let gotResponse = false;
 
-      for (const result of results) {
-        processSharkResult(result, lines);
+      for (let attempt = 0; attempt < activeSharks.length; attempt++) {
+        const id = pickNextSharkForRound2(
+          activeSharks,
+          runningLastRound2Speaker,
+          runningRound2SpeakCounts,
+          exclude,
+        );
+        if (!id) break;
+
+        try {
+          const result = await callShark(id, callPitch, runningOut, directorNotes[id]);
+          if (result.silent || !result.parsed) {
+            exclude.add(id);
+            continue;
+          }
+          processSharkResult(result, lines);
+          runningLastRound2Speaker = id;
+          runningRound2SpeakCounts[id] = (runningRound2SpeakCounts[id] ?? 0) + 1;
+          gotResponse = true;
+          break;
+        } catch (err) {
+          console.error(`[pitch/turn] ${id} failed:`, err);
+          exclude.add(id);
+        }
       }
 
-      // Track whether all sharks were silent this turn
-      const nonSilentCount = results.filter((r) => !r.silent).length;
-      const allSilentThisTurn = nonSilentCount === 0 && activeSharks.length > 0;
-      if (allSilentThisTurn) {
-        for (const id of activeSharks) {
-          if (!runningSpoken.includes(id)) runningSpoken.push(id);
-        }
+      if (!gotResponse && activeSharks.length > 0) {
+        const id = activeSharks[0];
+        const otherActive = SHARK_ORDER.filter((oid) => !runningOut.includes(oid) && oid !== id);
+        const fallbackParsed = parseSharkResponse(
+          buildFallbackResponse(id),
+          runningOut,
+          otherActive,
+        );
+        processSharkResult({ sharkId: id, silent: false, parsed: fallbackParsed }, lines);
+        runningLastRound2Speaker = id;
+        runningRound2SpeakCounts[id] = (runningRound2SpeakCounts[id] ?? 0) + 1;
       }
     }
 
@@ -398,11 +524,11 @@ export async function POST(req: Request) {
 
     // Call all active sharks in parallel with forced decision note
     const results = await Promise.all(
-      activeSharks.map((id) => callShark(id, tempPitch, runningOut, round3Note)),
+      activeSharks.map((id) => callSharkSafe(id, tempPitch, runningOut, round3Note)),
     );
 
     for (const result of results) {
-      processSharkResult(result, lines);
+      if (result) processSharkResult(result, lines);
     }
   }
 
@@ -439,10 +565,9 @@ export async function POST(req: Request) {
 
     roundComplete = forcedByUserCount || forcedByQuestions || allSilent;
   } else if (roundAtStart === 3) {
-    // Round 3 completes when all sharks have spoken
-    roundComplete = session.pitch.inAtRoundStart.every(
-      (id) => runningSpoken.includes(id) || runningOut.includes(id),
-    );
+    // Single parallel decision beat — always end the session after this turn (no extra rounds).
+    // (Previously required every shark in spokenThisRound; silent/failed sharks left the game stuck.)
+    roundComplete = true;
   }
 
   let nextRound = session.pitch.round;
@@ -456,9 +581,24 @@ export async function POST(req: Request) {
     if (session.pitch.round === 3) {
       shouldEndPitch = true;
       outcome = Object.keys(runningOffers).length > 0 ? "deal" : "no_deal";
+    } else if (session.pitch.round === 1) {
+      // Stay in Round 1 on the session until the pitcher replies; then isRound1Bridge runs Round 2.
+      nextRound = 1;
+      if (finalActive.length > 0) {
+        runningAwaitingUserAfterRound1 = true;
+      }
     } else {
       nextRound = (session.pitch.round + 1) as PitchRound;
     }
+  }
+
+  if (isRound1Bridge) {
+    nextRound = 2;
+    runningAwaitingUserAfterRound1 = false;
+  }
+
+  if (shouldEndPitch) {
+    runningAwaitingUserAfterRound1 = false;
   }
 
   // ── End data ──────────────────────────────────────────────────────────
@@ -499,6 +639,12 @@ export async function POST(req: Request) {
 
   updateSession(sessionId, (prev) => {
     const roundAdvanced = nextRound !== prev.pitch.round;
+    const roundTurnsPersist =
+      roundAdvanced && prev.pitch.round === 1 && prev.pitch.awaitingUserAfterRound1
+        ? runningRoundTurns.slice(prev.pitch.roundTurns.length)
+        : roundAdvanced
+          ? []
+          : runningRoundTurns;
 
     return {
       ...prev,
@@ -509,7 +655,7 @@ export async function POST(req: Request) {
         out: runningOut,
         conversationThread: runningThread,
         agentHistory: prev.pitch.agentHistory, // kept for scoring compatibility
-        roundTurns: roundAdvanced ? [] : runningRoundTurns,
+        roundTurns: roundTurnsPersist,
         fullTranscript: roundAdvanced
           ? [...prev.pitch.fullTranscript, ...runningRoundTurns]
           : [...prev.pitch.fullTranscript],
@@ -522,6 +668,9 @@ export async function POST(req: Request) {
         consecutiveLowEffort: newConsecutiveLowEffort,
         sessionRedFlags: runningSessionRedFlags,
         totalUserResponses: runningTotalUserResponses,
+        lastRound2Speaker: nextRound === 2 ? runningLastRound2Speaker : null,
+        round2SpeakCounts: nextRound === 2 ? runningRound2SpeakCounts : {},
+        awaitingUserAfterRound1: runningAwaitingUserAfterRound1,
       },
       endState: outcome ?? "active",
     };
@@ -535,6 +684,7 @@ export async function POST(req: Request) {
     lines: linesWithAudio,
     reactionLines: reactionLinesWithAudio.length > 0 ? reactionLinesWithAudio : undefined,
     activeSharks: finalActive,
+    awaitingUserAfterRound1: runningAwaitingUserAfterRound1,
     shouldEndPitch,
     outcome,
     endData,

@@ -98,6 +98,14 @@ export interface PitchState {
   sessionRedFlags: number;
   /** Total user responses in Round 2 (used to force transition to Round 3) */
   totalUserResponses: number;
+  /** Last shark who spoke in Round 2 — used so the same shark is not picked twice in a row */
+  lastRound2Speaker: SharkId | null;
+  /** How many times each shark has spoken in Round 2 — used to weight selection toward quieter sharks */
+  round2SpeakCounts: Partial<Record<SharkId, number>>;
+  /**
+   * Round 1 reactions are done; waiting for the pitcher to reply before The Grilling (Round 2) begins.
+   */
+  awaitingUserAfterRound1: boolean;
 }
 
 export interface SessionSnapshot {
@@ -147,7 +155,10 @@ export interface ResearchChatResponse {
 /** POST /api/pitch/turn — shape will grow with rounds / reactions */
 export interface PitchTurnRequest {
   sessionId: string;
-  /** User pitch or follow-up answer */
+  /**
+   * User pitch or follow-up. Special: `__accept__<sharkId>__` (e.g. `__accept__mark__`) locks in
+   * that shark's existing offer and ends the session with a deal (when an offer exists).
+   */
   message: string;
 }
 
@@ -168,6 +179,8 @@ export interface PitchTurnResponse {
   reactionLines?: SharkLine[];
   /** Which sharks are still active after this turn */
   activeSharks: SharkId[];
+  /** True after Round 1 until the pitcher sends a message (then Round 2 starts on the server). */
+  awaitingUserAfterRound1?: boolean;
   /** Whether the pitch session has ended */
   shouldEndPitch: boolean;
   /** End state type — only present when shouldEndPitch is true */
