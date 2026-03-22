@@ -15,7 +15,8 @@
 | Perplexity | `app/api/pitch/start/route.ts` | `PERPLEXITY_API_KEY`, model `sonar`, `fetch` timeout 5000 ms |
 | ElevenLabs TTS | `lib/elevenlabs.ts` | `ELEVEN_LABS_API_KEY` (or `ELEVEN_API_KEY`), `ELEVEN_VOICE_AGENT1` / `AGENT2` / `AGENT3` |
 | Session store | `lib/session/memory-store.ts` | In-process `Map`; cleared on server restart |
-| Speech-to-text (browser) | `hooks/useSpeechRecognition.ts` | `window.SpeechRecognition` / `webkitSpeechRecognition` |
+| Browser mic → text | `hooks/useSpeechRecognition.ts` | `MediaRecorder` + `getUserMedia`; POST blob to `/api/speech/transcribe` (not Web Speech API). |
+| OpenAI speech-to-text | `app/api/speech/transcribe/route.ts` | `OPENAI_API_KEY`, optional `OPENAI_TRANSCRIBE_MODEL` (default `gpt-4o-mini-transcribe`); `POST https://api.openai.com/v1/audio/transcriptions` |
 
 ## HTTP sequence (pitch mode)
 

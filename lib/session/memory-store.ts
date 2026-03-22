@@ -38,6 +38,7 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       lastRound2Speaker: null,
       round2SpeakCounts: {},
       awaitingUserAfterRound1: false,
+      awaitingFounderDecision: false,
     },
     endState: "active",
   };

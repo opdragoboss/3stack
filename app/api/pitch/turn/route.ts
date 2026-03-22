@@ -33,6 +33,14 @@ import type {
 
 const MAX_RETRIES = 2;
 const SCORING_MODEL = process.env.OPENAI_SCORING_MODEL ?? "gpt-4o-mini";
+const IMPROVEMENT_MODEL = process.env.OPENAI_IMPROVEMENT_MODEL ?? SCORING_MODEL;
+const GENERIC_IMPROVEMENT_TIPS = [
+  "Lead with the clearest proof point you have, not just the vision.",
+  "Tighten the financial story so your ask, margins, and growth path connect cleanly.",
+  "Show sharper differentiation against competitors before asking for investor conviction.",
+  "Answer objections directly and quickly instead of circling around the weak spot.",
+  "Make the next use of funds concrete so investors know exactly what progress their money buys.",
+];
 
 // ── Scoring ─────────────────────────────────────────────────────────────────
 
@@ -121,14 +129,113 @@ async function scoreShark(
   }
 }
 
+function formatTranscript(turns: RoundTurnEntry[]): string {
+  return turns
+    .map((t) => `${t.speaker === "pitcher" ? "Pitcher" : SHARK_LABEL[t.speaker as SharkId]}: ${t.content}`)
+    .join("\n");
+}
+
+function sanitizeTipText(tip: string): string {
+  return tip
+    .trim()
+    .replace(/^[-*•\d.\s]+/, "")
+    .replace(/\s+/g, " ");
+}
+
+function buildFallbackImprovementTips(scores: SharkScore[]): string[] {
+  const dynamicTips = [...scores]
+    .sort((a, b) => a.score - b.score)
+    .map((score) => {
+      const comment = score.comment.trim();
+      if (!comment || /^(Made an offer|Decided to pass|Session ended)\.?$/i.test(comment)) {
+        return null;
+      }
+      return `Address ${SHARK_LABEL[score.sharkId]}'s concern directly: ${comment}`;
+    })
+    .filter((tip): tip is string => Boolean(tip));
+
+  return [...new Set([...dynamicTips, ...GENERIC_IMPROVEMENT_TIPS])].slice(0, 5);
+}
+
+async function generateImprovementTips(
+  fullTranscript: RoundTurnEntry[],
+  scores: SharkScore[],
+): Promise<string[]> {
+  const fallbackTips = buildFallbackImprovementTips(scores);
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return fallbackTips;
+
+  const transcriptText = formatTranscript(fullTranscript);
+  const sharkFeedback = scores
+    .map((score) => `${SHARK_LABEL[score.sharkId]} (${score.score}/100): ${score.comment}`)
+    .join("\n");
+
+  const prompt = [
+    "You are a startup pitch coach reviewing a Shark Tank style session.",
+    "Use the transcript and shark feedback to produce exactly 5 concise improvement tips.",
+    "Each tip must be specific and actionable.",
+    "At least 3 tips must clearly tie back to a named shark's critique.",
+    "The remaining tips can synthesize broader patterns from the room.",
+    'Return only valid JSON in this shape: {"tips":["tip 1","tip 2","tip 3","tip 4","tip 5"]}',
+    "",
+    "SHARK FEEDBACK:",
+    sharkFeedback,
+    "",
+    "TRANSCRIPT:",
+    transcriptText,
+  ].join("\n");
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: IMPROVEMENT_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You synthesize investor feedback into concrete startup pitch improvements. Return only valid JSON.",
+          },
+          { role: "user", content: prompt },
+        ],
+        max_completion_tokens: 300,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.warn(`[improvement-tips] OpenAI ${res.status} - ${errBody.slice(0, 300)}`);
+      return fallbackTips;
+    }
+
+    const data = (await res.json()) as unknown;
+    const raw = extractChatCompletionText(data).trim();
+    if (!raw) return fallbackTips;
+
+    const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(jsonText) as { tips?: string[] };
+    const tips = (parsed.tips ?? [])
+      .map((tip) => sanitizeTipText(tip))
+      .filter((tip) => tip.length > 0);
+
+    return tips.length > 0 ? [...new Set(tips)].slice(0, 5) : fallbackTips;
+  } catch (err) {
+    console.warn("[improvement-tips] Falling back to local tips", err);
+    return fallbackTips;
+  }
+}
+
 async function buildEndScores(
   outSharks: SharkId[],
   offers: Partial<Record<SharkId, { amount: number; equity: number }>>,
   fullTranscript: RoundTurnEntry[],
 ): Promise<SharkScore[]> {
-  const transcriptText = fullTranscript
-    .map((t) => `${t.speaker === "pitcher" ? "Pitcher" : SHARK_LABEL[t.speaker as SharkId]}: ${t.content}`)
-    .join("\n");
+  const transcriptText = formatTranscript(fullTranscript);
 
   return Promise.all(
     SHARK_ORDER.map((id) => {
@@ -154,17 +261,17 @@ async function respondAcceptOffer(
   const runningRoundTurns = [...session.pitch.roundTurns];
   const finalTranscript = [...session.pitch.fullTranscript, ...runningRoundTurns];
   const scores = await buildEndScores(runningOut, runningOffers, finalTranscript);
+  const improvementTips = await generateImprovementTips(finalTranscript, scores);
 
   const endData: NonNullable<PitchTurnResponse["endData"]> = {
     sharkScores: scores,
-    improvementTips: [
+    improvementTips, /*
       "Sharpen your unit economics — know your CAC, LTV, and payback period cold",
       "Research your top 3 competitors and articulate exactly why you win",
       "Lead with traction: revenue, users, or growth rate — not just the vision",
       "Practice your ask — be specific about how you'll deploy the investment",
       "Show a clear path to profitability, not just a growth-at-all-costs story",
-    ],
-    dealSharkId: sharkId,
+    */ dealSharkId: sharkId,
     dealAmount: offer.amount,
     dealEquity: offer.equity,
   };
@@ -175,6 +282,7 @@ async function respondAcceptOffer(
     pitch: {
       ...prev.pitch,
       offers: runningOffers,
+      awaitingFounderDecision: false,
     },
   }));
 
@@ -445,6 +553,7 @@ export async function POST(req: Request) {
       activeSharks: SHARK_ORDER.filter((id) => !session.pitch.out.includes(id)),
       shouldEndPitch: false,
       awaitingUserAfterRound1: session.pitch.awaitingUserAfterRound1 ?? false,
+      awaitingFounderDecision: session.pitch.awaitingFounderDecision ?? false,
     } satisfies PitchTurnResponse);
   }
 
@@ -459,6 +568,7 @@ export async function POST(req: Request) {
     message !== "__ping__";
   const roundAtStart = isRound1Bridge ? 2 : session.pitch.round;
   let runningAwaitingUserAfterRound1 = session.pitch.awaitingUserAfterRound1 ?? false;
+  let runningAwaitingFounderDecision = session.pitch.awaitingFounderDecision ?? false;
   const runningOut: SharkId[] = [...session.pitch.out];
   const runningThread: ThreadMessage[] = [...session.pitch.conversationThread];
   const runningRoundTurns: RoundTurnEntry[] = isRoundStart
@@ -511,6 +621,7 @@ export async function POST(req: Request) {
     consecutiveLowEffort: newConsecutiveLowEffort,
     sessionRedFlags: runningSessionRedFlags,
     totalUserResponses: runningTotalUserResponses,
+    awaitingFounderDecision: runningAwaitingFounderDecision,
   });
 
   /** Process a shark result — update running state, push to lines array */
@@ -530,6 +641,7 @@ export async function POST(req: Request) {
       runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
     } else if (json.decision === "pass") {
       line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
+      delete runningOffers[sharkId];
     }
     targetLines.push(line);
 
@@ -550,23 +662,34 @@ export async function POST(req: Request) {
     if (!runningSpoken.includes(sharkId)) runningSpoken.push(sharkId);
   }
 
+  /**
+   * Run a full panel beat in order so later sharks can react to earlier
+   * questions and live offers instead of unknowingly duplicating them.
+   */
+  async function runSequentialPanelTurn(
+    sharkIds: SharkId[],
+    getDirectorNote?: (sharkId: SharkId) => string | undefined,
+  ): Promise<void> {
+    for (const sharkId of sharkIds) {
+      const result = await callSharkSafe(
+        sharkId,
+        buildTempPitch(),
+        runningOut,
+        getDirectorNote?.(sharkId),
+      );
+      if (result) processSharkResult(result, lines);
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // ROUND 1 — THE PITCH
   // ══════════════════════════════════════════════════════════════════════════
   if (roundAtStart === 1 && !isRoundStart) {
     const activeSharks = SHARK_ORDER.filter((id) => !runningOut.includes(id));
-    const tempPitch = buildTempPitch();
 
-    // Call all 3 sharks in parallel — they give initial reactions
-    // No cross-reaction round here; sharks see each other's responses
-    // naturally in Round 2 via the shared conversation thread.
-    const results = await Promise.all(
-      activeSharks.map((id) => callSharkSafe(id, tempPitch, runningOut)),
-    );
-
-    for (const result of results) {
-      if (result) processSharkResult(result, lines);
-    }
+    // Let the room unfold in order so each shark can avoid repeating
+    // the last question and pick a different opening angle.
+    await runSequentialPanelTurn(activeSharks);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -649,16 +772,10 @@ export async function POST(req: Request) {
   else if (roundAtStart === 3) {
     const activeSharks = SHARK_ORDER.filter((id) => !runningOut.includes(id));
     const round3Note = buildRound3Note();
-    const tempPitch = buildTempPitch();
 
-    // Call all active sharks in parallel with forced decision note
-    const results = await Promise.all(
-      activeSharks.map((id) => callSharkSafe(id, tempPitch, runningOut, round3Note)),
-    );
-
-    for (const result of results) {
-      if (result) processSharkResult(result, lines);
-    }
+    // Decision round is also sequential so later sharks can react to
+    // live offers already put on the board.
+    await runSequentialPanelTurn(activeSharks, () => round3Note);
   }
 
   // ── Round start (Round 2 opener) ──────────────────────────────────────
@@ -679,7 +796,7 @@ export async function POST(req: Request) {
   let roundComplete = false;
 
   if (roundAtStart === 1) {
-    // Round 1 completes after all sharks have spoken (including cross-reactions)
+    // Round 1 completes after all sharks have taken their initial shot.
     roundComplete = session.pitch.inAtRoundStart.every(
       (id) => runningSpoken.includes(id) || runningOut.includes(id),
     );
@@ -694,7 +811,7 @@ export async function POST(req: Request) {
 
     roundComplete = forcedByUserCount || forcedByQuestions || allSilent;
   } else if (roundAtStart === 3) {
-    // Single parallel decision beat — always end the session after this turn (no extra rounds).
+    // Single decision beat - always end the session after this turn (no extra rounds).
     // (Previously required every shark in spokenThisRound; silent/failed sharks left the game stuck.)
     roundComplete = true;
   }
@@ -703,15 +820,23 @@ export async function POST(req: Request) {
   let shouldEndPitch = false;
   let outcome: SessionEndState | undefined;
   const hasOffers = Object.keys(runningOffers).length > 0;
-  const endedDuringDecisionRound = roundAtStart === 3 || session.pitch.round === 3;
+
+  if (roundAtStart !== 3) {
+    runningAwaitingFounderDecision = false;
+  }
 
   if (finalActive.length === 0) {
     shouldEndPitch = true;
-    outcome = hasOffers ? "deal" : endedDuringDecisionRound ? "no_deal" : "game_over";
+    outcome = hasOffers ? "deal" : "no_deal";
   } else if (roundComplete) {
     if (session.pitch.round === 3) {
-      shouldEndPitch = true;
-      outcome = hasOffers ? "deal" : "no_deal";
+      if (hasOffers) {
+        nextRound = 3;
+        runningAwaitingFounderDecision = true;
+      } else {
+        shouldEndPitch = true;
+        outcome = "no_deal";
+      }
     } else if (session.pitch.round === 1) {
       // Stay in Round 1 on the session until the pitcher replies; then isRound1Bridge runs Round 2.
       nextRound = 1;
@@ -730,6 +855,11 @@ export async function POST(req: Request) {
 
   if (shouldEndPitch) {
     runningAwaitingUserAfterRound1 = false;
+    runningAwaitingFounderDecision = false;
+  }
+
+  if (!hasOffers) {
+    runningAwaitingFounderDecision = false;
   }
 
   // ── End data ──────────────────────────────────────────────────────────
@@ -738,15 +868,16 @@ export async function POST(req: Request) {
   if (shouldEndPitch) {
     const finalTranscript = [...session.pitch.fullTranscript, ...runningRoundTurns];
     const scores = await buildEndScores(runningOut, runningOffers, finalTranscript);
+    const improvementTips = await generateImprovementTips(finalTranscript, scores);
     endData = {
       sharkScores: scores,
-      improvementTips: [
+      improvementTips, /*
         "Sharpen your unit economics — know your CAC, LTV, and payback period cold",
         "Research your top 3 competitors and articulate exactly why you win",
         "Lead with traction: revenue, users, or growth rate — not just the vision",
         "Practice your ask — be specific about how you'll deploy the investment",
         "Show a clear path to profitability, not just a growth-at-all-costs story",
-      ],
+      ], */
     };
     const offerSharks = Object.keys(runningOffers) as SharkId[];
     if (outcome === "deal" && offerSharks.length > 0) {
@@ -802,6 +933,7 @@ export async function POST(req: Request) {
         lastRound2Speaker: nextRound === 2 ? runningLastRound2Speaker : null,
         round2SpeakCounts: nextRound === 2 ? runningRound2SpeakCounts : {},
         awaitingUserAfterRound1: runningAwaitingUserAfterRound1,
+        awaitingFounderDecision: runningAwaitingFounderDecision,
       },
       endState: outcome ?? "active",
     };
@@ -816,6 +948,7 @@ export async function POST(req: Request) {
     reactionLines: reactionLinesWithAudio.length > 0 ? reactionLinesWithAudio : undefined,
     activeSharks: finalActive,
     awaitingUserAfterRound1: runningAwaitingUserAfterRound1,
+    awaitingFounderDecision: runningAwaitingFounderDecision,
     shouldEndPitch,
     outcome,
     endData,

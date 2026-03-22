@@ -1,23 +1,125 @@
 import { NextResponse } from "next/server";
 import { getSession, updateSession } from "@/lib/session";
 import { detectRedFlags } from "@/lib/agents/buildSharkPayload";
-import type { PitchStartRequest, PitchStartResponse } from "@/lib/types";
+import type {
+  PitchResearchResult,
+  PitchResearchSource,
+  PitchStartRequest,
+  PitchStartResponse,
+} from "@/lib/types";
 
 const PITCH_RESEARCH_MODEL = "sonar";
+const PITCH_RESEARCH_TIMEOUT_MS = 5_000;
+
+type PerplexityChatResponse = {
+  citations?: unknown;
+  search_results?: unknown;
+  choices?: { message?: { content?: string } }[];
+};
+
+function getFallbackSourceTitle(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function normalizeCitations(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+
+  const deduped = new Set<string>();
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      deduped.add(item.trim());
+    }
+  }
+
+  return [...deduped];
+}
+
+function normalizeSources(
+  raw: unknown,
+  citations: string[],
+): PitchResearchSource[] {
+  const sources: PitchResearchSource[] = [];
+  const seen = new Set<string>();
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue;
+
+      const record = item as Record<string, unknown>;
+      const url =
+        typeof record.url === "string"
+          ? record.url.trim()
+          : typeof record.link === "string"
+            ? record.link.trim()
+            : "";
+      if (!url || seen.has(url)) continue;
+
+      seen.add(url);
+      sources.push({
+        title:
+          typeof record.title === "string" && record.title.trim()
+            ? record.title.trim()
+            : getFallbackSourceTitle(url),
+        url,
+        source:
+          typeof record.source === "string" && record.source.trim()
+            ? record.source.trim()
+            : undefined,
+        date:
+          typeof record.date === "string" && record.date.trim()
+            ? record.date.trim()
+            : typeof record.published_date === "string" && record.published_date.trim()
+              ? record.published_date.trim()
+              : undefined,
+      });
+    }
+  }
+
+  if (sources.length > 0) {
+    return sources;
+  }
+
+  for (const citation of citations) {
+    if (seen.has(citation)) continue;
+    seen.add(citation);
+    sources.push({
+      title: getFallbackSourceTitle(citation),
+      url: citation,
+    });
+  }
+
+  return sources;
+}
 
 /**
- * Perplexity market research — best-effort with 5s hard timeout.
- * Returns null on any failure so the Tank can proceed without market context.
+ * Perplexity market research - best-effort with a hard timeout.
+ * Returns structured metadata so the client can show a visible market brief.
  */
-async function fetchMarketResearch(pitchText: string): Promise<string | null> {
+async function fetchMarketResearch(
+  pitchText: string,
+): Promise<PitchResearchResult> {
+  const startedAt = Date.now();
   const apiKey = process.env.PERPLEXITY_API_KEY;
+
   if (!apiKey) {
-    console.warn("[pitch/start] No Perplexity API key — skipping research");
-    return null;
+    console.warn("[pitch/start] No Perplexity API key - skipping research");
+    return {
+      provider: "perplexity",
+      model: PITCH_RESEARCH_MODEL,
+      status: "unavailable",
+      reason: "missing_api_key",
+      citations: [],
+      sources: [],
+      latencyMs: 0,
+    };
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+  const timeout = setTimeout(() => controller.abort(), PITCH_RESEARCH_TIMEOUT_MS);
 
   try {
     const res = await fetch("https://api.perplexity.ai/chat/completions", {
@@ -27,7 +129,7 @@ async function fetchMarketResearch(pitchText: string): Promise<string | null> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "sonar",
+        model: PITCH_RESEARCH_MODEL,
         max_tokens: 200,
         messages: [
           {
@@ -39,24 +141,88 @@ async function fetchMarketResearch(pitchText: string): Promise<string | null> {
       signal: controller.signal,
     });
 
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    return data?.choices?.[0]?.message?.content ?? null;
-  } catch (err) {
-    clearTimeout(timeout);
-    if ((err as Error).name === "AbortError") {
-      console.warn("[pitch/start] Perplexity timed out after 5s — proceeding without research");
-    } else {
-      console.warn("[pitch/start] Perplexity error — proceeding without research", err);
+    const latencyMs = Date.now() - startedAt;
+
+    if (!res.ok) {
+      return {
+        provider: "perplexity",
+        model: PITCH_RESEARCH_MODEL,
+        status: "unavailable",
+        reason: "http_error",
+        citations: [],
+        sources: [],
+        latencyMs,
+        httpStatus: res.status,
+      };
     }
-    return null;
+
+    const data = (await res.json()) as PerplexityChatResponse;
+    const summary = data.choices?.[0]?.message?.content?.trim();
+    const citations = normalizeCitations(data.citations);
+    const sources = normalizeSources(data.search_results, citations);
+
+    if (!summary) {
+      return {
+        provider: "perplexity",
+        model: PITCH_RESEARCH_MODEL,
+        status: "unavailable",
+        reason: "empty_response",
+        citations,
+        sources,
+        latencyMs,
+        httpStatus: res.status,
+      };
+    }
+
+    return {
+      provider: "perplexity",
+      model: PITCH_RESEARCH_MODEL,
+      status: "completed",
+      summary,
+      citations,
+      sources,
+      latencyMs,
+      httpStatus: res.status,
+    };
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      console.warn("[pitch/start] Perplexity timed out after 5s - proceeding without research");
+      return {
+        provider: "perplexity",
+        model: PITCH_RESEARCH_MODEL,
+        status: "unavailable",
+        reason: "timeout",
+        citations: [],
+        sources: [],
+        latencyMs: Date.now() - startedAt,
+      };
+    }
+
+    console.warn("[pitch/start] Perplexity error - proceeding without research", err);
+    return {
+      provider: "perplexity",
+      model: PITCH_RESEARCH_MODEL,
+      status: "unavailable",
+      reason: "request_failed",
+      citations: [],
+      sources: [],
+      latencyMs: Date.now() - startedAt,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-// ── Route handler ─────────────────────────────────────────────
+function buildSkippedResearch(reason: "short_pitch" | "too_many_red_flags"): PitchResearchResult {
+  return {
+    provider: "perplexity",
+    model: PITCH_RESEARCH_MODEL,
+    status: "skipped",
+    reason,
+    citations: [],
+    sources: [],
+  };
+}
 
 export async function POST(req: Request) {
   let body: PitchStartRequest;
@@ -81,43 +247,18 @@ export async function POST(req: Request) {
 
   const trimmed = pitchText.trim();
 
-  // Detect red flags on the initial pitch — only used to skip Perplexity on joke pitches
+  // Detect red flags on the initial pitch - only used to skip Perplexity on joke pitches.
   const pitchRedFlags = detectRedFlags(trimmed);
-  const shouldSkipResearch = pitchRedFlags >= 2 || trimmed.split(/\s+/).length <= 10;
-
-  // Perplexity research is best-effort (5s timeout), skipped on joke/short input
-  const marketContext = shouldSkipResearch
-    ? null
-    : await fetchMarketResearch(trimmed);
+  const wordCount = trimmed.split(/\s+/).length;
+  const shouldSkipResearch = pitchRedFlags >= 2 || wordCount <= 10;
 
   const research = shouldSkipResearch
-    ? {
-        provider: "perplexity" as const,
-        model: PITCH_RESEARCH_MODEL,
-        status: "skipped" as const,
-        reason: trimmed.split(/\s+/).length <= 10 ? "short_pitch" as const : "too_many_red_flags" as const,
-        citations: [],
-        sources: [],
-      }
-    : marketContext
-      ? {
-          provider: "perplexity" as const,
-          model: PITCH_RESEARCH_MODEL,
-          status: "completed" as const,
-          summary: marketContext,
-          citations: [],
-          sources: [],
-        }
-      : {
-          provider: "perplexity" as const,
-          model: PITCH_RESEARCH_MODEL,
-          status: "unavailable" as const,
-          reason: process.env.PERPLEXITY_API_KEY ? "request_failed" as const : "missing_api_key" as const,
-          citations: [],
-          sources: [],
-        };
+    ? buildSkippedResearch(wordCount <= 10 ? "short_pitch" : "too_many_red_flags")
+    : await fetchMarketResearch(trimmed);
 
-  // Persist pitch text + market context (don't seed red flags — those accumulate in Round 2 only)
+  const marketContext = research.status === "completed" ? research.summary ?? null : null;
+
+  // Persist pitch text + market context (do not seed red flags - those accumulate in Round 2 only).
   updateSession(sessionId, (prev) => ({
     ...prev,
     pitch: {

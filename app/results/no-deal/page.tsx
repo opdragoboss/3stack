@@ -9,7 +9,7 @@ import { SHARK_LABEL } from "@/lib/constants/sharks";
 import type { SharkScore } from "@/lib/types";
 
 interface StoredNoDealResult {
-  type: "no-deal";
+  type: "no-deal" | "game-over";
   sharkScores: SharkScore[];
   improvementTips?: string[];
 }
@@ -47,7 +47,7 @@ function readStoredResult(): StoredNoDealResult {
     const stored = sessionStorage.getItem("shark_results");
     if (!stored) return PLACEHOLDER;
     const parsed = JSON.parse(stored);
-    if (parsed.type === "no-deal") return parsed;
+    if (parsed.type === "no-deal" || parsed.type === "game-over") return parsed;
   } catch { /* use placeholder */ }
   return PLACEHOLDER;
 }
@@ -162,6 +162,9 @@ export default function ResultsNoDealPage() {
             Tips to Improve Your Pitch
           </h2>
         </div>
+        <p className="mb-4 text-sm text-zinc-500">
+          Generated from your session transcript and the sharks&apos; actual feedback.
+        </p>
         <ol className="space-y-3">
           {tips.map((tip, i) => (
             <li key={i} className="flex gap-3 text-sm text-zinc-400">

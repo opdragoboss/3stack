@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Mic, Play, SkipForward } from "lucide-react";
 import { SharkCard } from "@/components/shark/SharkCard";
 import { DealBoard } from "@/components/pitch/DealBoard";
+import { MarketBriefCard } from "@/components/pitch/MarketBriefCard";
 import { RoundIndicator } from "@/components/pitch/RoundIndicator";
 import { TypingIndicator } from "@/components/pitch/TypingIndicator";
 import { useOrCreateSessionId } from "@/hooks/useOrCreateSessionId";
@@ -16,6 +17,8 @@ import { cn } from "@/lib/utils";
 import type {
   PitchRound,
   PitchMessage,
+  PitchResearchResult,
+  PitchStartResponse,
   PitchTurnResponse,
   SharkId,
   SharkOffer,
@@ -49,6 +52,10 @@ interface PitchModeProps {
   requireStart?: boolean;
 }
 
+interface ExecuteTurnOptions {
+  appendUserMessage?: boolean;
+}
+
 function getUiErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const raw = error.message.trim();
@@ -73,12 +80,26 @@ function shuffleArray<T>(items: T[]): T[] {
   return out;
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getPrepStatusLabel(phase: PitchPhase): string {
+  return phase === "validating"
+    ? "Checking pitch"
+    : "Building market brief with Perplexity";
+}
+
 export function PitchMode({ requireStart = false }: PitchModeProps) {
   const router = useRouter();
   const [hasEnteredTank, setHasEnteredTank] = useState(!requireStart);
   const { sessionId, error } = useOrCreateSessionId("pitch", hasEnteredTank);
   const [phase, setPhase] = useState<PitchPhase>(requireStart ? "prestart" : "waiting_session");
   const [invalidReason, setInvalidReason] = useState("");
+  const [marketBrief, setMarketBrief] = useState<PitchResearchResult | null>(null);
+  const [isMarketBriefOpen, setIsMarketBriefOpen] = useState(false);
   const [round, setRound] = useState<PitchRound>(1);
   const roundRef = useRef<PitchRound>(1);
   roundRef.current = round;
@@ -93,6 +114,7 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
   const [roundTransition, setRoundTransition] = useState<PitchRound | null>(null);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [awaitingAfterR1, setAwaitingAfterR1] = useState(false);
+  const [awaitingFounderDecision, setAwaitingFounderDecision] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [speechQueue, setSpeechQueue] = useState<SpeechQueueItem[]>([]);
@@ -102,15 +124,18 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
   const currentSpeech = useMemo(() => speechQueue[0] ?? null, [speechQueue]);
   const isSharksResponding = speechQueue.length > 0;
   const isBusy = isAITyping || isSharksResponding || sessionEnded;
+  const canAcceptOffers = phase === "in-tank" && awaitingFounderDecision && !isBusy;
 
   const deferredEndRef = useRef<{
-    path: "/results/deal" | "/results/no-deal" | "/results/game-over";
+    path: "/results/deal" | "/results/no-deal";
     endData: Record<string, unknown>;
   } | null>(null);
 
   const pendingRoundRef = useRef<PitchRound | null>(null);
   const roundTransitionTimeoutRef = useRef<number | null>(null);
-  const executeTurnRef = useRef<(userText: string) => Promise<void>>(async () => {});
+  const executeTurnRef = useRef<
+    (userText: string, options?: ExecuteTurnOptions) => Promise<void>
+  >(async () => {});
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const voice = useSpeechRecognition();
@@ -342,12 +367,20 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
     setStreamedText("");
   }
 
-  async function executeTurn(userText: string) {
+  function handleAcceptOffer(sharkId: SharkId) {
+    if (!canAcceptOffers) return;
+    void executeTurnRef.current(`__accept__${sharkId}__`);
+  }
+
+  async function executeTurn(
+    userText: string,
+    options: ExecuteTurnOptions = {},
+  ) {
     setIsAITyping(true);
     setSpeakingShark(null);
 
     const isAcceptProtocol = /^__accept__(mark|kevin|barbara)__$/.test(userText);
-    if (userText !== "__round_start__" && !isAcceptProtocol) {
+    if (options.appendUserMessage !== false && userText !== "__round_start__" && !isAcceptProtocol) {
       const userMsg: PitchMessage = {
         id: `user-${Date.now()}`,
         sender: "user",
@@ -372,6 +405,7 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
       }
 
       setAwaitingAfterR1(!!data.awaitingUserAfterRound1);
+      setAwaitingFounderDecision(!!data.awaitingFounderDecision);
 
       const serverOut = SHARK_ORDER.filter((id) => !data.activeSharks.includes(id));
 
@@ -398,12 +432,8 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
 
       if (data.shouldEndPitch) {
         const outcome = data.outcome ?? "no_deal";
-        const path: "/results/deal" | "/results/no-deal" | "/results/game-over" =
-          outcome === "deal"
-            ? "/results/deal"
-            : outcome === "game_over"
-              ? "/results/game-over"
-              : "/results/no-deal";
+        const path: "/results/deal" | "/results/no-deal" =
+          outcome === "deal" ? "/results/deal" : "/results/no-deal";
         const endData = data.endData;
         deferredEndRef.current = {
           path,
@@ -411,9 +441,7 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
             type:
               outcome === "deal"
                 ? "deal"
-                : outcome === "game_over"
-                  ? "game-over"
-                  : "no-deal",
+                : "no-deal",
             sharkId: endData?.dealSharkId,
             amount: endData?.dealAmount,
             equity: endData?.dealEquity,
@@ -486,14 +514,32 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
     if (phase === "ready_to_pitch" || phase === "invalid") {
       const pitchText = input.trim();
       setInput("");
+      setInvalidReason("");
+      setMarketBrief(null);
+      setIsMarketBriefOpen(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `user-${Date.now()}`,
+          sender: "user",
+          content: pitchText,
+          timestamp: new Date(),
+        },
+      ]);
+      setIsAITyping(true);
       setPhase("validating");
 
       try {
-        const res = await fetch("/api/pitch/start", {
+        const startRequest = fetch("/api/pitch/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId, pitchText }),
         });
+
+        await wait(320);
+        setPhase("researching");
+
+        const res = await startRequest;
 
         if (res.status === 404) {
           sessionStorage.removeItem("shark_session_id");
@@ -502,8 +548,13 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
         }
         if (!res.ok) throw new Error(await res.text());
 
+        const data = (await res.json()) as PitchStartResponse;
+        setMarketBrief(data.research);
+        setIsMarketBriefOpen(data.research.status === "completed");
+
+        await wait(data.research.status === "completed" ? 260 : 180);
         setPhase("in-tank");
-        await executeTurn(pitchText);
+        await executeTurn(pitchText, { appendUserMessage: false });
       } catch (startError) {
         setInvalidReason(getUiErrorMessage(startError));
         setInput(pitchText);
@@ -610,8 +661,8 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
                       className="max-w-md text-center"
                     >
                       <p className="text-sm leading-relaxed text-zinc-400">
-                        The tank is loaded. Start when you&apos;re ready, then send your pitch with
-                        your ask and equity offer.
+                        The tank is loaded. Send your pitch with your ask and equity offer after
+                        you start.
                       </p>
                       <motion.button
                         type="button"
@@ -664,57 +715,90 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
               </div>
             )}
             <AnimatePresence initial={false}>
-              {messages.map((msg) => {
+              {messages.map((msg, index) => {
                 const sharkStyle = msg.sharkId ? SHARK_MSG_STYLE[msg.sharkId] : null;
 
                 return (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className={cn(
-                      "flex",
-                      msg.sender === "user" ? "justify-end" : "justify-start",
-                    )}
-                  >
-                    {msg.sender === "shark" && msg.sharkId && (
-                      <div className="mr-2.5 mt-1 shrink-0">
-                        <PixelAvatar sharkId={msg.sharkId} scale={2} />
-                      </div>
-                    )}
-                    <div
+                  <div key={msg.id} className="space-y-3">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
                       className={cn(
-                        "max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
-                        msg.sender === "user"
-                          ? "bg-amber-600/80 text-white"
-                          : sharkStyle
-                            ? `border-l-2 ${sharkStyle.border} ${sharkStyle.bg} border border-zinc-700/40 text-zinc-200`
-                            : "border border-zinc-700 bg-zinc-800 text-zinc-200",
-                        msg.isReaction && "opacity-80 italic",
+                        "flex",
+                        msg.sender === "user" ? "justify-end" : "justify-start",
                       )}
                     >
-                      {msg.sender === "shark" && msg.sharkId && sharkStyle && (
-                        <p className={cn("mb-1 text-xs font-semibold", sharkStyle.name)}>
-                          {SHARK_LABEL[msg.sharkId]}
-                          {msg.isReaction && " (reacting)"}
-                        </p>
+                      {msg.sender === "shark" && msg.sharkId && (
+                        <div className="mr-2.5 mt-1 shrink-0">
+                          <PixelAvatar sharkId={msg.sharkId} scale={2} />
+                        </div>
                       )}
-                      {msg.content}
-                    </div>
-                  </motion.div>
+
+                      <div
+                        className={cn(
+                          "max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                          msg.sender === "user"
+                            ? "bg-amber-600/80 text-white"
+                            : sharkStyle
+                              ? `border-l-2 ${sharkStyle.border} ${sharkStyle.bg} border border-zinc-700/40 text-zinc-200`
+                              : "border border-zinc-700 bg-zinc-800 text-zinc-200",
+                          msg.isReaction && "opacity-80 italic",
+                        )}
+                      >
+                        {msg.sender === "shark" && msg.sharkId && sharkStyle && (
+                          <p className={cn("mb-1 text-xs font-semibold", sharkStyle.name)}>
+                            {SHARK_LABEL[msg.sharkId]}
+                            {msg.isReaction && " (reacting)"}
+                          </p>
+                        )}
+                        {msg.content}
+                      </div>
+                    </motion.div>
+
+                    {index === 0 && marketBrief && (
+                      <MarketBriefCard
+                        research={marketBrief}
+                        isOpen={isMarketBriefOpen}
+                        onToggle={() => setIsMarketBriefOpen((open) => !open)}
+                      />
+                    )}
+
+                    {index === 0 &&
+                      !marketBrief &&
+                      isAITyping &&
+                      (phase === "validating" || phase === "researching") && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.18 }}
+                          className="flex justify-start"
+                        >
+                          <div className="mr-1.5 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-zinc-700/60 bg-zinc-900/80">
+                            <div className="flex gap-1">
+                              <span className="typing-dot h-1 w-1 rounded-full bg-zinc-400" />
+                              <span className="typing-dot h-1 w-1 rounded-full bg-zinc-400" />
+                              <span className="typing-dot h-1 w-1 rounded-full bg-zinc-400" />
+                            </div>
+                          </div>
+                          <div className="max-w-[min(82%,38rem)] min-w-[18rem] rounded-[18px] border border-zinc-700/30 bg-zinc-900/72 px-3 py-2 text-zinc-200">
+                            <div className="rounded-[14px] border border-white/7 bg-white/[0.03] px-2.5 py-1.5">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                                Thinking / Activity
+                              </p>
+                              <p className="mt-0.5 text-[13px] leading-5 text-zinc-200">
+                                {getPrepStatusLabel(phase)}
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                  </div>
                 );
               })}
             </AnimatePresence>
-            {isAITyping && (
+            {isAITyping && phase !== "validating" && phase !== "researching" && (
               <div className="space-y-1">
-                {(phase === "validating" || phase === "researching") && (
-                  <p className="text-center text-xs text-zinc-500">
-                    {phase === "validating"
-                      ? "Checking your pitch..."
-                      : "Researching your market..."}
-                  </p>
-                )}
                 <TypingIndicator />
               </div>
             )}
@@ -725,17 +809,10 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
             {phase === "invalid" && invalidReason && (
               <p className="mb-2 text-xs text-red-400">{invalidReason}</p>
             )}
-            {phase === "prestart" && (
-              <div className="mb-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleStartPitch}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200 transition-colors hover:bg-amber-500/16"
-                >
-                  <Play className="h-3.5 w-3.5" aria-hidden />
-                  Start Pitch
-                </button>
-              </div>
+            {awaitingFounderDecision && phase === "in-tank" && !sessionEnded && (
+              <p className="mb-2 text-xs text-emerald-300">
+                Live offers are on the board. Accept one, or type a counteroffer to keep negotiating.
+              </p>
             )}
             {isSharksResponding && (
               <div className="mb-2 flex justify-end">
@@ -756,10 +833,12 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   phase === "prestart"
-                    ? "Click Start Pitch when you're ready..."
+                    ? "Click Start Pitch to begin..."
                     : phase === "ready_to_pitch" || phase === "invalid"
                       ? "Your pitch: business, how much you're raising, equity offered..."
-                      : awaitingAfterR1
+                      : awaitingFounderDecision
+                        ? "Accept a live offer from the board, or counter in chat..."
+                        : awaitingAfterR1
                         ? "The Sharks have spoken - reply before Round 2 (The Grilling)..."
                         : "Reply to the Sharks..."
                 }
@@ -849,7 +928,11 @@ export function PitchMode({ requireStart = false }: PitchModeProps) {
         </div>
 
         <div className="w-80 shrink-0 overflow-y-auto">
-          <DealBoard offers={offers} />
+          <DealBoard
+            offers={offers}
+            canAcceptOffers={canAcceptOffers}
+            onAcceptOffer={handleAcceptOffer}
+          />
         </div>
       </div>
     </div>

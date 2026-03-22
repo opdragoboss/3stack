@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, Trophy } from "lucide-react";
+import { DollarSign, Lightbulb, TrendingUp, Trophy } from "lucide-react";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
 import { FreshStartLink } from "@/components/pitch/FreshStartLink";
 import { SHARK_LABEL } from "@/lib/constants/sharks";
@@ -14,6 +14,7 @@ interface StoredDealResult {
   amount: number;
   equity: number;
   sharkScores: SharkScore[];
+  improvementTips?: string[];
 }
 
 function computeGrade(avg: number): string {
@@ -37,6 +38,13 @@ const PLACEHOLDER: StoredDealResult = {
     { sharkId: "kevin", score: 72, comment: "The margins need work, but the revenue model has potential. I want my money back in 3 years." },
     { sharkId: "barbara", score: 81, comment: "You've got fire and a great brand story. I believe in the founder." },
   ],
+  improvementTips: [
+    "Clarify the next growth milestone your new capital unlocks so the upside feels even more obvious.",
+    "Tighten the margin story so Kevin's payoff timeline feels safer and faster.",
+    "Make the competitive moat more concrete so Mark sees how this becomes a category winner.",
+    "Turn Barbara's founder-belief into brand proof with sharper customer traction and retention data.",
+    "Keep the ask deployment specific so future investors immediately see where each dollar goes.",
+  ],
 };
 
 function readStoredResult(): StoredDealResult {
@@ -57,6 +65,7 @@ export default function ResultsDealPage() {
     result.sharkScores.reduce((sum, s) => sum + s.score, 0) / result.sharkScores.length,
   );
   const grade = computeGrade(averageScore);
+  const tips = result.improvementTips ?? PLACEHOLDER.improvementTips!;
 
   return (
     <div className="relative flex min-h-screen flex-col items-center px-6 py-16">
@@ -168,11 +177,38 @@ export default function ResultsDealPage() {
         ))}
       </motion.div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 1.05 }}
+        className="relative z-10 mt-10 w-full max-w-2xl rounded-2xl border border-emerald-700/25 bg-emerald-950/20 p-6"
+      >
+        <div className="mb-4 flex items-center gap-2">
+          <Lightbulb className="h-5 w-5 text-emerald-300" />
+          <h2 className="text-lg font-semibold text-zinc-100">
+            How to Make the Pitch Even Stronger
+          </h2>
+        </div>
+        <p className="mb-4 text-sm text-zinc-400">
+          Generated from your session transcript and the sharks&apos; actual feedback.
+        </p>
+        <ol className="space-y-3">
+          {tips.map((tip, i) => (
+            <li key={i} className="flex gap-3 text-sm text-zinc-300">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-xs font-semibold text-emerald-300">
+                {i + 1}
+              </span>
+              {tip}
+            </li>
+          ))}
+        </ol>
+      </motion.div>
+
       {/* Action Buttons */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 1.2 }}
+        transition={{ duration: 0.6, delay: 1.3 }}
         className="relative z-10 mt-10 flex gap-4"
       >
         <FreshStartLink

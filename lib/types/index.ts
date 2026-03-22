@@ -1,5 +1,5 @@
 /**
- * Shared contracts for AI Shark Tank (v2 plan / hard requirements).
+ * Shared contracts for FishBowl (v2 plan / hard requirements).
  * API routes and client components should import from here to avoid drift.
  */
 
@@ -106,6 +106,10 @@ export interface PitchState {
    * Round 1 reactions are done; waiting for the pitcher to reply before The Grilling (Round 2) begins.
    */
   awaitingUserAfterRound1: boolean;
+  /**
+   * One or more live offers are on the table in Round 3; the founder must accept or counter.
+   */
+  awaitingFounderDecision: boolean;
 }
 
 export interface SessionSnapshot {
@@ -213,6 +217,8 @@ export interface PitchTurnResponse {
   activeSharks: SharkId[];
   /** True after Round 1 until the pitcher sends a message (then Round 2 starts on the server). */
   awaitingUserAfterRound1?: boolean;
+  /** True when live offers exist and the founder can accept one or counter in chat. */
+  awaitingFounderDecision?: boolean;
   /** Whether the pitch session has ended */
   shouldEndPitch: boolean;
   /** End state type — only present when shouldEndPitch is true */

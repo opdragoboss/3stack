@@ -6,10 +6,12 @@ import { PixelAvatar } from "@/components/shark/PixelAvatar";
 import { SHARK_LABEL, SHARK_ACCENT_COLOR } from "@/lib/constants/sharks";
 import { SHARK_ORDER } from "@/lib/constants/sharks";
 import { cn } from "@/lib/utils";
-import type { SharkOffer } from "@/lib/types";
+import type { SharkId, SharkOffer } from "@/lib/types";
 
 interface DealBoardProps {
   offers: SharkOffer[];
+  canAcceptOffers?: boolean;
+  onAcceptOffer?: (sharkId: SharkId) => void;
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
@@ -19,7 +21,13 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   counter: { label: "Counter", className: "bg-yellow-500/15 text-yellow-400" },
 };
 
-export function DealBoard({ offers }: DealBoardProps) {
+export function DealBoard({
+  offers,
+  canAcceptOffers = false,
+  onAcceptOffer,
+}: DealBoardProps) {
+  const liveOffers = offers.filter((offer) => offer.status === "offer" || offer.status === "counter");
+
   return (
     <div className="rounded-2xl border border-slate-700/40 bg-slate-900/30 p-5">
       <div className="mb-4 flex items-center gap-2.5">
@@ -28,6 +36,14 @@ export function DealBoard({ offers }: DealBoardProps) {
           Deal Board
         </h3>
       </div>
+
+      {liveOffers.length > 0 && (
+        <p className="mb-4 text-xs leading-relaxed text-zinc-500">
+          {canAcceptOffers
+            ? "Live offers are on the table. Pick one here or counter in the chat."
+            : `${liveOffers.length} live offer${liveOffers.length === 1 ? "" : "s"} on the table.`}
+        </p>
+      )}
 
       <div className="space-y-2">
         <AnimatePresence mode="popLayout">
@@ -52,7 +68,7 @@ export function DealBoard({ offers }: DealBoardProps) {
                 <div className="relative shrink-0">
                   <PixelAvatar
                     sharkId={sharkId}
-                    state={status === "out" ? "out" : status === "offer" ? "offer" : "idle"}
+                    state={status === "out" ? "out" : status === "offer" || status === "counter" ? "offer" : "idle"}
                     scale={2}
                   />
                   {status !== "out" && (
@@ -77,14 +93,26 @@ export function DealBoard({ offers }: DealBoardProps) {
                   )}
                 </div>
 
-                <span
-                  className={cn(
-                    "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium",
-                    badge.className,
+                <div className="shrink-0 flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "rounded-md px-2 py-0.5 text-[11px] font-medium",
+                      badge.className,
+                    )}
+                  >
+                    {badge.label}
+                  </span>
+                  {(status === "offer" || status === "counter") && onAcceptOffer && (
+                    <button
+                      type="button"
+                      onClick={() => onAcceptOffer(sharkId)}
+                      disabled={!canAcceptOffers}
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/18 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Accept
+                    </button>
                   )}
-                >
-                  {badge.label}
-                </span>
+                </div>
               </motion.div>
             );
           })}

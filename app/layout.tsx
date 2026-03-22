@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Shark Tank",
+  title: "FishBowl",
   description:
     "Research your pitch, then face three independent AI Sharks with ElevenLabs voices.",
 };
