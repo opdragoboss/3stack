@@ -16,7 +16,7 @@
 ## 2. There are exactly 3 Sharks
 
 - The app must have exactly 3 Shark personalities:
-  - Mark Cuban
+  - Big Money Tony (tech-billionaire persona; `mark` slot in code)
   - Kevin O'Leary
   - Barbara Corcoran
 - Each Shark must stay fully in character in every response — no breaking persona
@@ -34,7 +34,7 @@
 
 | Agent | Shark | Stack |
 |---|---|---|
-| Mark | Mark Cuban | **Google ADK** — distinct agent/instruction + memory |
+| Mark | Big Money Tony | **Google ADK** — distinct agent/instruction + memory |
 | Kevin | Kevin O'Leary | **Google ADK** — distinct agent/instruction + memory |
 | Barbara | Barbara Corcoran | **Google ADK** — distinct agent/instruction + memory |
 
@@ -96,8 +96,8 @@ Pitch validation (not a Shark) uses a **fast Gemini** classification call on the
 ## 7. The Tank is round-based with dialogue-driven turn order
 
 - After Perplexity completes (or times out), the session enters **The Tank**
-- **Turn order is not a fixed loop** (not “always Mark → Kevin → Barbara”). Who speaks next follows from the **conversation** — Sharks address the entrepreneur or hand off to another Shark — with the **next** turn chosen explicitly in structured JSON (see §14) so the client and server never guess from prose alone
-- **Opening each round:** The **first Shark turn** of the round is the next **in** Shark in **presentation order** **Mark → Kevin → Barbara** (skip any who are **out**). That only seeds the round; **every later turn** uses `nextSpeaker` / `nextAfterPitcher` from the prior Shark line (§14)
+- **Turn order is not a fixed loop** (not “always Tony → Kevin → Barbara”). Who speaks next follows from the **conversation** — Sharks address the entrepreneur or hand off to another Shark — with the **next** turn chosen explicitly in structured JSON (see §14) so the client and server never guess from prose alone
+- **Opening each round:** The **first Shark turn** of the round is the next **in** Shark in **presentation order** **Tony → Kevin → Barbara** (the `mark` / Big Money Tony slot first; skip any who are **out**). That only seeds the round; **every later turn** uses `nextSpeaker` / `nextAfterPitcher` from the prior Shark line (§14)
 - **One round** = from round start until **every** Shark who was **in** at the **start** of that round has taken **at least one** speaking turn as a Shark this round (orchestrator tracks the set). Then **end of round** runs (§10). *Exception:* if the game ends earlier per §11, rounds need not complete
 - If handoffs would **stall** the round (e.g. the same Sharks repeat without the third ever speaking), the orchestrator **must** override: schedule the next **in** Shark in **presentation order** who has **not** yet spoken this round, until the completion condition is met
 - On each Shark turn:
@@ -211,7 +211,7 @@ Pitch validation (not a Shark) uses a **fast Gemini** classification call on the
 
 - If a Shark’s **Gemini / ADK** call returns an error, times out (**>10 seconds**), or refuses the request, the app must not hang or show a blank response
 - The affected Shark's API route must catch the error and immediately return a hardcoded in-character fallback string specific to that Shark:
-  - Mark: `"I need to think on this one. I'm out for now."`
+  - Tony (Big Money Tony / `mark`): `"I need to think on this one. I'm out for now."`
   - Kevin: `"You've wasted enough of my time. I'm out."`
   - Barbara: `"I'm going to sit this one out, but good luck."`
 - The fallback must include valid JSON (including §14 handoff fields), e.g. `{"status":"out","done":true,"decision":"pass","amount":0,"equity":0,"nextSpeaker":"pitcher","nextAfterPitcher":null}`

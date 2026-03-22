@@ -21,6 +21,8 @@
 /build
 
 # misc
+# Accidental `nul` file breaks Windows tooling (reserved name — Turbopack/postcss)
+/nul
 .DS_Store
 *.pem
 
