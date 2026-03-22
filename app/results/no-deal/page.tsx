@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { XCircle, Lightbulb } from "lucide-react";
@@ -41,18 +41,19 @@ const PLACEHOLDER: StoredNoDealResult = {
   ],
 };
 
-export default function ResultsNoDealPage() {
-  const [result, setResult] = useState<StoredNoDealResult>(PLACEHOLDER);
-
-  useEffect(() => {
+function readStoredResult(): StoredNoDealResult {
+  if (typeof window === "undefined") return PLACEHOLDER;
+  try {
     const stored = sessionStorage.getItem("shark_results");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed.type === "no-deal") setResult(parsed);
-      } catch { /* use placeholder */ }
-    }
-  }, []);
+    if (!stored) return PLACEHOLDER;
+    const parsed = JSON.parse(stored);
+    if (parsed.type === "no-deal") return parsed;
+  } catch { /* use placeholder */ }
+  return PLACEHOLDER;
+}
+
+export default function ResultsNoDealPage() {
+  const result = useMemo(() => readStoredResult(), []);
 
   const averageScore = Math.round(
     result.sharkScores.reduce((sum, s) => sum + s.score, 0) / result.sharkScores.length,

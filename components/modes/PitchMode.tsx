@@ -47,7 +47,7 @@ export function PitchMode() {
   const router = useRouter();
   const { sessionId, error } = useOrCreateSessionId("pitch");
   const [phase, setPhase] = useState<PitchPhase>("waiting_session");
-  const [invalidReason, setInvalidReason] = useState("");
+  const [, setInvalidReason] = useState("");
   const [round, setRound] = useState<PitchRound>(1);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<PitchMessage[]>([]);
@@ -151,7 +151,6 @@ export function PitchMode() {
       cancelled = true;
       clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSpeech]);
 
   // ── Navigate when queue drains + deferred end data ────────
