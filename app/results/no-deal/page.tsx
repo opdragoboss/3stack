@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { XCircle, Lightbulb } from "lucide-react";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
+import { FreshStartLink } from "@/components/pitch/FreshStartLink";
 import { SHARK_LABEL } from "@/lib/constants/sharks";
 import type { SharkScore } from "@/lib/types";
 
@@ -181,18 +181,18 @@ export default function ResultsNoDealPage() {
         transition={{ duration: 0.6, delay: 1.4 }}
         className="relative z-10 mt-10 flex gap-4"
       >
-        <Link
+        <FreshStartLink
           href="/pitch"
           className="rounded-2xl bg-amber-500 px-8 py-4 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-400"
         >
           Try Again
-        </Link>
-        <Link
+        </FreshStartLink>
+        <FreshStartLink
           href="/"
           className="rounded-2xl border border-zinc-700 px-8 py-4 text-sm font-semibold text-zinc-300 transition-colors hover:bg-zinc-800"
         >
           Home
-        </Link>
+        </FreshStartLink>
       </motion.div>
     </div>
   );

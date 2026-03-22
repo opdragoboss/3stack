@@ -1,5 +1,4 @@
 import { SHARK_SYSTEM_PROMPT } from "@/lib/constants/prompts";
-import { SHARK_ORDER } from "@/lib/constants/sharks";
 import type { ChatMessage, PitchState, SharkId, ThreadMessage } from "@/lib/types";
 
 /**
@@ -157,7 +156,7 @@ export function buildCrossReactionNote(): string {
  * Build the Round 3 forced decision note.
  */
 export function buildRound3Note(): string {
-  return "\n\n[DIRECTOR NOTE: Final round — ONE short beat. Speak 2–3 sentences max (your verdict in plain language), then the JSON block. Offer OR pass — no questions, no follow-ups, no cliffhangers.]";
+  return "\n\n[DIRECTOR NOTE: Final round — ONE short beat. Speak 2–3 sentences max, then the JSON block. Your spoken text must make the verdict unmistakable: say 'I'm out' clearly for a pass, or say the exact dollar amount and equity if you are making an offer or counter. Offer, counter, or pass only — no questions, no follow-ups, no cliffhangers.]";
 }
 
 /**
@@ -182,7 +181,7 @@ export function buildSharkPayload(
   // Add round context
   const phaseLabel =
     pitch.round === 3
-      ? "DECISION PHASE — final offer (exact $ and % in JSON) or pass. Be brief. No questions."
+      ? "DECISION PHASE — final offer, counter, or pass. Say the exact terms in plain language and in JSON. Be brief. No questions."
       : pitch.round === 2
         ? "GRILLING PHASE — ask questions only. Do NOT make offers or final decisions yet."
         : "PITCH REACTION — give your gut reaction. Maybe ONE question.";

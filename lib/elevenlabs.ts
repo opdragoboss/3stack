@@ -46,7 +46,9 @@ export function stripSpokenText(raw: string): string {
 }
 
 export function getElevenLabsConfig(): { apiKey: string } | null {
-  const apiKey = process.env.ELEVEN_LABS_API_KEY?.trim();
+  const apiKey =
+    process.env.ELEVEN_LABS_API_KEY?.trim() ||
+    process.env.ELEVEN_API_KEY?.trim();
   if (!apiKey) return null;
   return { apiKey };
 }

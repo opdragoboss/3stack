@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { DollarSign, TrendingUp, Trophy } from "lucide-react";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
+import { FreshStartLink } from "@/components/pitch/FreshStartLink";
 import { SHARK_LABEL } from "@/lib/constants/sharks";
 import type { SharkId, SharkScore } from "@/lib/types";
 
@@ -175,18 +175,18 @@ export default function ResultsDealPage() {
         transition={{ duration: 0.6, delay: 1.2 }}
         className="relative z-10 mt-10 flex gap-4"
       >
-        <Link
+        <FreshStartLink
           href="/"
           className="rounded-2xl bg-emerald-600 px-8 py-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
         >
           Return Home
-        </Link>
-        <Link
+        </FreshStartLink>
+        <FreshStartLink
           href="/pitch"
           className="rounded-2xl border border-zinc-700 px-8 py-4 text-sm font-semibold text-zinc-300 transition-colors hover:bg-zinc-800"
         >
           Try Another Pitch
-        </Link>
+        </FreshStartLink>
       </motion.div>
     </div>
   );

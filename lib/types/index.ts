@@ -125,12 +125,44 @@ export interface PitchStartRequest {
   pitchText: string;
 }
 
+export type PitchResearchStatus = "completed" | "skipped" | "unavailable";
+
+export type PitchResearchReason =
+  | "short_pitch"
+  | "too_many_red_flags"
+  | "missing_api_key"
+  | "timeout"
+  | "http_error"
+  | "request_failed"
+  | "empty_response";
+
+export interface PitchResearchSource {
+  title: string;
+  url: string;
+  source?: string;
+  date?: string;
+}
+
+export interface PitchResearchResult {
+  provider: "perplexity";
+  model: string;
+  status: PitchResearchStatus;
+  reason?: PitchResearchReason;
+  summary?: string;
+  citations: string[];
+  sources: PitchResearchSource[];
+  latencyMs?: number;
+  httpStatus?: number;
+}
+
 export interface PitchStartResponse {
   valid: boolean;
   /** Only present when valid is false */
   reason?: string;
   /** Perplexity summary — set on session and echoed here when available */
   marketContext?: string;
+  /** Structured market-research metadata for the UI */
+  research: PitchResearchResult;
 }
 
 /** POST /api/session/init */

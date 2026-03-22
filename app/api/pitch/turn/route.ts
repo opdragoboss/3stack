@@ -8,7 +8,13 @@ import {
   detectRedFlags,
 } from "@/lib/agents/buildSharkPayload";
 import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
-import { parseSharkResponse, hasValidDealTerms } from "@/lib/pitch/parseSharkResponse";
+import { classifySoftPassDecision } from "@/lib/pitch/classifySoftPassDecision";
+import {
+  parseSharkResponse,
+  hasValidDealTerms,
+  hasPassDecisionLanguage,
+  type SharkJson14,
+} from "@/lib/pitch/parseSharkResponse";
 import { enrichSharkLinesWithTts } from "@/lib/elevenlabs";
 import { extractChatCompletionText } from "@/lib/openai/extractChatContent";
 import type {
@@ -205,6 +211,60 @@ function looksLikeQuestion(text: string): boolean {
   return /\?\s*$/.test(text.replace(/```[\s\S]*?```/g, "").replace(/\{[\s\S]*?\}\s*$/, "").trim());
 }
 
+function isDealDecision(decision: SharkJson14["decision"]): decision is "offer" | "counter" {
+  return decision === "offer" || decision === "counter";
+}
+
+function hasConcreteDecision(json: SharkJson14): boolean {
+  return isDealDecision(json.decision) || json.decision === "pass" || json.status === "out";
+}
+
+function ensureConcreteDecisionText(text: string, json: SharkJson14): string {
+  const trimmed = text.trim();
+
+  if ((json.decision === "pass" || json.status === "out") && hasPassDecisionLanguage(trimmed)) {
+    return trimmed;
+  }
+
+  if (json.decision === "pass" || json.status === "out") {
+    if (/\b(?:I['’]?m|I am)\s+out\b/i.test(trimmed)) return trimmed;
+    return trimmed ? `${trimmed} I'm out.` : "I'm out.";
+  }
+
+  if (!isDealDecision(json.decision)) {
+    return trimmed;
+  }
+
+  const mentionsMoney =
+    /\$\s?\d|(?:\d[\d,]*)\s*(?:k|m|million|thousand)\b/i.test(trimmed);
+  const mentionsEquity = /\b\d+(?:\.\d+)?\s*%/.test(trimmed);
+  if (mentionsMoney && mentionsEquity) return trimmed;
+
+  const verdict = json.decision === "counter" ? "My counter is" : "My offer is";
+  const concreteTerms = `${verdict} $${json.amount.toLocaleString()} for ${json.equity}%.`;
+  return trimmed ? `${trimmed} ${concreteTerms}` : concreteTerms;
+}
+
+function buildRound3RepairPayload(
+  payload: ReturnType<typeof buildSharkPayload>,
+  priorResponse: string,
+  reason: "missing_decision" | "invalid_terms",
+) {
+  const correction =
+    reason === "invalid_terms"
+      ? "[SYSTEM: Your previous final answer used invalid deal terms. Reply again now with exactly one final move. If you offer or counter, the amount must be between $10,000 and $2,000,000 and the equity must be between 5% and 50%. No questions. End with valid JSON.]"
+      : "[SYSTEM: Your previous final answer did not make a concrete final move. Reply again now with exactly one final decision: offer, counter, or pass. If you pass, say you are out clearly. If you offer or counter, say the exact dollar amount and equity in spoken text and JSON. No questions. No ambiguity.]";
+
+  return {
+    systemInstruction: payload.systemInstruction,
+    messages: [
+      ...payload.messages,
+      { role: "assistant" as const, content: priorResponse.trim() || "(no usable text)" },
+      { role: "user" as const, content: correction },
+    ],
+  };
+}
+
 /** Call one shark with retries, return parsed result */
 async function callShark(
   sharkId: SharkId,
@@ -215,17 +275,67 @@ async function callShark(
   const payload = buildSharkPayload(sharkId, pitch, directorNote);
   const otherActive = SHARK_ORDER.filter((id) => !runningOut.includes(id) && id !== sharkId);
 
-  let rawText = await callGeminiForShark(sharkId, payload);
-
-  if (isSilentResponse(rawText)) {
-    return { sharkId, silent: true as const, parsed: null };
-  }
-
-  let parsed = parseSharkResponse(rawText, runningOut, otherActive);
-
+  let currentPayload = payload;
   let retries = 0;
-  while (parsed.json && !hasValidDealTerms(parsed.json) && retries < MAX_RETRIES) {
-    retries++;
+  while (true) {
+    const rawText = await callGeminiForShark(sharkId, currentPayload);
+
+    if (isSilentResponse(rawText)) {
+      if (pitch.round === 3 && retries < MAX_RETRIES) {
+        retries++;
+        console.warn(`[pitch/turn] Silent Round 3 response for ${sharkId} â€” retry ${retries}/${MAX_RETRIES}`);
+        continue;
+      }
+      if (pitch.round === 3) {
+        console.warn(`[pitch/turn] ${sharkId} stayed silent in Round 3 â€” fallback`);
+        const parsed = parseSharkResponse(buildFallbackResponse(sharkId), runningOut, otherActive);
+        return { sharkId, silent: false as const, parsed };
+      }
+      return { sharkId, silent: true as const, parsed: null };
+    }
+
+    let parsed = parseSharkResponse(rawText, runningOut, otherActive);
+
+    if (pitch.round === 3 && !hasConcreteDecision(parsed.json) && parsed.displayText.trim()) {
+      const softPassVerdict = await classifySoftPassDecision(sharkId, parsed.displayText);
+      if (softPassVerdict === "pass") {
+        parsed = {
+          ...parsed,
+          json: {
+            ...parsed.json,
+            status: "out",
+            done: true,
+            decision: "pass",
+            amount: 0,
+            equity: 0,
+            nextSpeaker: "pitcher",
+          },
+        };
+        console.warn(`[pitch/turn] Resolved ambiguous Round 3 pass for ${sharkId} from spoken text`);
+      }
+    }
+
+    const invalidDealTerms = !hasValidDealTerms(parsed.json);
+    const missingDecision = pitch.round === 3 && !hasConcreteDecision(parsed.json);
+
+    if ((invalidDealTerms || missingDecision) && retries < MAX_RETRIES) {
+      retries++;
+      if (pitch.round === 3) {
+        currentPayload = buildRound3RepairPayload(
+          payload,
+          rawText,
+          invalidDealTerms ? "invalid_terms" : "missing_decision",
+        );
+      }
+      if (invalidDealTerms) {
+        console.warn(`[pitch/turn] Invalid deal terms for ${sharkId} - retry ${retries}/${MAX_RETRIES}`);
+      } else {
+        console.warn(`[pitch/turn] Non-concrete Round 3 decision for ${sharkId} - retry ${retries}/${MAX_RETRIES}`);
+      }
+      continue;
+    }
+/*
+      retries++;
     console.warn(`[pitch/turn] Invalid deal terms for ${sharkId} — retry ${retries}/${MAX_RETRIES}`);
     rawText = await callGeminiForShark(sharkId, payload);
     if (isSilentResponse(rawText)) {
@@ -234,12 +344,31 @@ async function callShark(
     parsed = parseSharkResponse(rawText, runningOut, otherActive);
   }
 
+*/
+
+    if (invalidDealTerms) {
+      console.warn(`[pitch/turn] ${sharkId} still invalid terms after retries - fallback`);
+      const fallback = parseSharkResponse(buildFallbackResponse(sharkId), runningOut, otherActive);
+      return { sharkId, silent: false as const, parsed: fallback };
+    }
+
+    if (missingDecision) {
+      console.warn(
+        `[pitch/turn] ${sharkId} still missing decision after retries - keeping spoken line instead of forced fallback`,
+      );
+      return { sharkId, silent: false as const, parsed };
+    }
+
+    return { sharkId, silent: false as const, parsed };
+  }
+/*
   if (parsed.json && !hasValidDealTerms(parsed.json)) {
     console.warn(`[pitch/turn] ${sharkId} still invalid after retries — fallback`);
     parsed = parseSharkResponse(buildFallbackResponse(sharkId), runningOut, otherActive);
   }
 
   return { sharkId, silent: false as const, parsed };
+*/
 }
 
 /** Pick one active shark for Round 2: avoid same as last unless they're the only option; weight toward lower speak counts. */
@@ -345,13 +474,13 @@ export async function POST(req: Request) {
     ...session.pitch.questionsAsked,
   };
   let runningLastRound2Speaker: SharkId | null = session.pitch.lastRound2Speaker ?? null;
-  let runningRound2SpeakCounts: Partial<Record<SharkId, number>> = {
+  const runningRound2SpeakCounts: Partial<Record<SharkId, number>> = {
     ...(session.pitch.round2SpeakCounts ?? {}),
   };
 
   // ── Red flag detection on user message ──────────────────────────────────
   const messageRedFlags = isRoundStart ? 0 : detectRedFlags(message);
-  let runningSessionRedFlags = session.pitch.sessionRedFlags + messageRedFlags;
+  const runningSessionRedFlags = session.pitch.sessionRedFlags + messageRedFlags;
 
   // ── Low-effort answer tracking ──────────────────────────────────────────
   const isLowEffort = !isRoundStart && message.trim().split(/\s+/).length < 10;
@@ -393,11 +522,11 @@ export async function POST(req: Request) {
 
     const { sharkId, parsed } = result;
     const json = parsed.json;
-    const displayText = parsed.displayText;
+    const displayText = ensureConcreteDecisionText(parsed.displayText, json);
 
     const line: SharkLine = { sharkId, text: displayText };
-    if (json.decision === "offer") {
-      line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
+    if (isDealDecision(json.decision)) {
+      line.decision = { decision: json.decision, amount: json.amount, equity: json.equity, score: 0 };
       runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
     } else if (json.decision === "pass") {
       line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
@@ -573,14 +702,16 @@ export async function POST(req: Request) {
   let nextRound = session.pitch.round;
   let shouldEndPitch = false;
   let outcome: SessionEndState | undefined;
+  const hasOffers = Object.keys(runningOffers).length > 0;
+  const endedDuringDecisionRound = roundAtStart === 3 || session.pitch.round === 3;
 
   if (finalActive.length === 0) {
     shouldEndPitch = true;
-    outcome = Object.keys(runningOffers).length > 0 ? "deal" : "game_over";
+    outcome = hasOffers ? "deal" : endedDuringDecisionRound ? "no_deal" : "game_over";
   } else if (roundComplete) {
     if (session.pitch.round === 3) {
       shouldEndPitch = true;
-      outcome = Object.keys(runningOffers).length > 0 ? "deal" : "no_deal";
+      outcome = hasOffers ? "deal" : "no_deal";
     } else if (session.pitch.round === 1) {
       // Stay in Round 1 on the session until the pitcher replies; then isRound1Bridge runs Round 2.
       nextRound = 1;

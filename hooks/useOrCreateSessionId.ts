@@ -36,11 +36,13 @@ async function validateOrCreate(existingId: string, entry: SessionEntry): Promis
   return existingId;
 }
 
-export function useOrCreateSessionId(preferredEntry: SessionEntry) {
+export function useOrCreateSessionId(preferredEntry: SessionEntry, enabled = true) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
+
     let cancelled = false;
 
     const existing = sessionStorage.getItem(STORAGE_KEY);
@@ -63,7 +65,10 @@ export function useOrCreateSessionId(preferredEntry: SessionEntry) {
     }
 
     return () => { cancelled = true; };
-  }, [preferredEntry]);
+  }, [enabled, preferredEntry]);
 
-  return { sessionId, error };
+  return {
+    sessionId: enabled ? sessionId : null,
+    error: enabled ? error : null,
+  };
 }

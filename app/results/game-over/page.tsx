@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { Skull } from "lucide-react";
+import { FreshStartLink } from "@/components/pitch/FreshStartLink";
 import { PixelAvatar } from "@/components/shark/PixelAvatar";
 import { SHARK_LABEL } from "@/lib/constants/sharks";
 import type { SharkScore } from "@/lib/types";
@@ -74,12 +74,12 @@ export default function ResultsGameOverPage() {
           ))}
         </ul>
 
-        <Link
+        <FreshStartLink
           href="/"
           className="mt-10 rounded-xl border border-zinc-700 px-6 py-3 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-900"
         >
           Back to home
-        </Link>
+        </FreshStartLink>
       </motion.div>
     </div>
   );

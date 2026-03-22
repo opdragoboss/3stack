@@ -3,6 +3,8 @@ import { getSession, updateSession } from "@/lib/session";
 import { detectRedFlags } from "@/lib/agents/buildSharkPayload";
 import type { PitchStartRequest, PitchStartResponse } from "@/lib/types";
 
+const PITCH_RESEARCH_MODEL = "sonar";
+
 /**
  * Perplexity market research — best-effort with 5s hard timeout.
  * Returns null on any failure so the Tank can proceed without market context.
@@ -88,6 +90,33 @@ export async function POST(req: Request) {
     ? null
     : await fetchMarketResearch(trimmed);
 
+  const research = shouldSkipResearch
+    ? {
+        provider: "perplexity" as const,
+        model: PITCH_RESEARCH_MODEL,
+        status: "skipped" as const,
+        reason: trimmed.split(/\s+/).length <= 10 ? "short_pitch" as const : "too_many_red_flags" as const,
+        citations: [],
+        sources: [],
+      }
+    : marketContext
+      ? {
+          provider: "perplexity" as const,
+          model: PITCH_RESEARCH_MODEL,
+          status: "completed" as const,
+          summary: marketContext,
+          citations: [],
+          sources: [],
+        }
+      : {
+          provider: "perplexity" as const,
+          model: PITCH_RESEARCH_MODEL,
+          status: "unavailable" as const,
+          reason: process.env.PERPLEXITY_API_KEY ? "request_failed" as const : "missing_api_key" as const,
+          citations: [],
+          sources: [],
+        };
+
   // Persist pitch text + market context (don't seed red flags — those accumulate in Round 2 only)
   updateSession(sessionId, (prev) => ({
     ...prev,
@@ -100,6 +129,7 @@ export async function POST(req: Request) {
 
   const payload: PitchStartResponse = {
     valid: true,
+    research,
     ...(marketContext ? { marketContext } : {}),
   };
   return NextResponse.json(payload);

@@ -6,10 +6,10 @@ export default function ResearchPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
         <Link
-          href="/"
+          href="/pitch"
           className="text-sm font-medium text-zinc-500 hover:text-zinc-300"
         >
-          ← Back
+          &larr; Back to pitch
         </Link>
         <h1 className="text-3xl font-bold tracking-tight text-white">Research mode</h1>
         <p className="text-zinc-400">
