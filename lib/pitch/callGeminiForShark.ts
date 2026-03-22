@@ -2,7 +2,7 @@ import type { SharkPromptPayload } from "@/lib/agents/buildSharkPayload";
 import type { SharkId } from "@/lib/types";
 
 const MODEL = "gpt-5-nano";
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 30_000;
 
 /** §16 in-character fallback strings — spoken in the Shark's voice, marks them out */
 const FALLBACK_TEXT: Record<SharkId, string> = {
@@ -85,7 +85,7 @@ export async function callGeminiForShark(
   } catch (err) {
     clearTimeout(timeout);
     if ((err as Error).name === "AbortError") {
-      console.warn(`[pitch/turn] OpenAI timed out (>10s) for ${sharkId} — §16 fallback`);
+      console.warn(`[pitch/turn] OpenAI timed out (>30s) for ${sharkId} — §16 fallback`);
     } else {
       console.warn(`[pitch/turn] OpenAI error for ${sharkId}:`, err);
     }

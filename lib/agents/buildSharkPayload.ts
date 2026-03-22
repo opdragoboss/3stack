@@ -81,17 +81,23 @@ function buildMessages(sharkId: SharkId, pitch: PitchState): ChatMessage[] {
   if (priorTranscript) {
     msgs.push({
       role: "user",
-      content: `[PRIOR ROUNDS — these questions have already been asked and answered. Do NOT repeat them; build on them or explore new angles]\n${priorTranscript}`,
+      content: `[PRIOR ROUNDS — these topics have ALREADY been covered. The entire topic cluster is OFF LIMITS — do not rephrase or revisit them. Ask about something completely different.]\n${priorTranscript}`,
     });
   }
 
+  const phaseLabel =
+    pitch.round === 3
+      ? "DECISION PHASE — you MUST make your final offer (with specific dollar amount and equity percentage) or pass. Do NOT ask any more questions."
+      : "GRILLING PHASE — ask questions only. Do NOT make offers or final decisions yet.";
+
+  const roundHeader = `[CURRENT ROUND: ${pitch.round} of 3 — ${phaseLabel}]`;
+
   const roundTranscript = formatRoundTranscript(pitch.roundTurns);
-  if (roundTranscript) {
-    msgs.push({
-      role: "user",
-      content: `[What has happened earlier THIS round — react naturally, do not re-ask anything already covered]\n${roundTranscript}`,
-    });
-  }
+  const roundContent = roundTranscript
+    ? `${roundHeader}\n[Earlier THIS round — these topics are ALREADY COVERED and OFF LIMITS. You must ask about a completely different topic area.]\n${roundTranscript}`
+    : roundHeader;
+
+  msgs.push({ role: "user", content: roundContent });
 
   return msgs;
 }

@@ -129,7 +129,9 @@ export async function POST(req: Request) {
     { speaker: "pitcher", content: message },
   ];
   const runningSpoken: SharkId[] = [...session.pitch.spokenThisRound];
-  const offers: Partial<Record<SharkId, { amount: number; equity: number }>> = {};
+  const runningOffers: Partial<Record<SharkId, { amount: number; equity: number }>> = {
+    ...session.pitch.offers,
+  };
   const lines: SharkLine[] = [];
 
   let currentSpeaker: SharkId | null = getFirstSpeaker(session.pitch);
@@ -179,7 +181,7 @@ export async function POST(req: Request) {
     const line: SharkLine = { sharkId, text: displayText };
     if (json.decision === "offer") {
       line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
-      offers[sharkId] = { amount: json.amount, equity: json.equity };
+      runningOffers[sharkId] = { amount: json.amount, equity: json.equity };
     } else if (json.decision === "pass") {
       line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
     }
@@ -195,12 +197,23 @@ export async function POST(req: Request) {
     lastNextSpeaker = json.nextSpeaker;
     lastNextAfterPitcher = json.nextAfterPitcher;
 
-    // Continue chain only if the Shark handed off to another in-Shark
+    // Continue chain only if the Shark handed off to another in-Shark.
+    // §7 override: if any active Shark hasn't spoken this round yet,
+    // redirect the chain to them (presentation order) instead of
+    // following a cross-talk handoff that would skip them.
     if (json.status === "out" || json.nextSpeaker === "pitcher") {
       currentSpeaker = null;
     } else {
-      const next = json.nextSpeaker as SharkId;
-      currentSpeaker = !runningOut.includes(next) ? next : null;
+      const activeNow = SHARK_ORDER.filter((id) => !runningOut.includes(id));
+      const unspokenNow = activeNow.filter((id) => !runningSpoken.includes(id));
+
+      if (unspokenNow.length > 0) {
+        const requested = json.nextSpeaker as SharkId;
+        currentSpeaker = unspokenNow.includes(requested) ? requested : unspokenNow[0];
+      } else {
+        const next = json.nextSpeaker as SharkId;
+        currentSpeaker = !runningOut.includes(next) ? next : null;
+      }
     }
   }
 
@@ -219,11 +232,11 @@ export async function POST(req: Request) {
 
   if (finalActive.length === 0) {
     shouldEndPitch = true;
-    outcome = Object.keys(offers).length > 0 ? "deal" : "game_over";
+    outcome = Object.keys(runningOffers).length > 0 ? "deal" : "game_over";
   } else if (roundComplete) {
     if (session.pitch.round === 3) {
       shouldEndPitch = true;
-      outcome = Object.keys(offers).length > 0 ? "deal" : "no_deal";
+      outcome = Object.keys(runningOffers).length > 0 ? "deal" : "no_deal";
     } else {
       nextRound = (session.pitch.round + 1) as PitchRound;
     }
@@ -233,7 +246,7 @@ export async function POST(req: Request) {
 
   let endData: PitchTurnResponse["endData"];
   if (shouldEndPitch) {
-    const scores = buildEndScores(runningOut, offers);
+    const scores = buildEndScores(runningOut, runningOffers);
     endData = {
       sharkScores: scores,
       improvementTips: [
@@ -244,12 +257,14 @@ export async function POST(req: Request) {
         "Show a clear path to profitability, not just a growth-at-all-costs story",
       ],
     };
-    const offerSharks = Object.keys(offers) as SharkId[];
+    const offerSharks = Object.keys(runningOffers) as SharkId[];
     if (outcome === "deal" && offerSharks.length > 0) {
-      const dealSharkId = offerSharks[0];
-      endData.dealSharkId = dealSharkId;
-      endData.dealAmount = offers[dealSharkId]!.amount;
-      endData.dealEquity = offers[dealSharkId]!.equity;
+      const best = offerSharks.reduce((a, b) =>
+        runningOffers[a]!.amount > runningOffers[b]!.amount ? a : b,
+      );
+      endData.dealSharkId = best;
+      endData.dealAmount = runningOffers[best]!.amount;
+      endData.dealEquity = runningOffers[best]!.equity;
     }
   }
 
@@ -292,13 +307,17 @@ export async function POST(req: Request) {
         inAtRoundStart: roundAdvanced ? finalActive : prev.pitch.inAtRoundStart,
         nextSpeaker: lastNextSpeaker,
         nextAfterPitcher: lastNextAfterPitcher,
+        offers: runningOffers,
       },
       endState: outcome ?? "active",
     };
   });
 
+  const spokenInRound = session.pitch.round;
+
   return NextResponse.json({
     round: nextRound,
+    spokenInRound,
     lines,
     activeSharks: finalActive,
     shouldEndPitch,

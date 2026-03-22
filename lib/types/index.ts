@@ -76,6 +76,8 @@ export interface PitchState {
   nextSpeaker?: "pitcher" | SharkId;
   /** When nextSpeaker is "pitcher", which Shark comes after the founder replies */
   nextAfterPitcher?: SharkId | null;
+  /** Offers accumulated across all turns — keyed by SharkId */
+  offers: Partial<Record<SharkId, { amount: number; equity: number }>>;
 }
 
 export interface SessionSnapshot {
@@ -138,6 +140,8 @@ export interface SharkLine {
 
 export interface PitchTurnResponse {
   round: PitchRound;
+  /** The round these lines were actually spoken in (may differ from `round` on advance) */
+  spokenInRound?: PitchRound;
   /** Main Shark responses for this turn */
   lines: SharkLine[];
   /** Cross-talk reactions (when implemented) */

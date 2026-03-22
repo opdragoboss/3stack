@@ -29,6 +29,7 @@ export function createSession(entry: SessionEntry): SessionSnapshot {
       fullTranscript: [],
       inAtRoundStart: ["mark", "kevin", "barbara"] as SharkId[],
       spokenThisRound: [],
+      offers: {},
     },
     endState: "active",
   };
