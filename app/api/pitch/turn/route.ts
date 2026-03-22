@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession, updateSession } from "@/lib/session";
 import { SHARK_ORDER } from "@/lib/constants/sharks";
+import { buildSharkPayload } from "@/lib/agents/buildSharkPayload";
+import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
+import { parseSharkResponse, hasValidDealTerms } from "@/lib/pitch/parseSharkResponse";
 import type {
   PitchTurnRequest,
   PitchTurnResponse,
@@ -10,104 +13,57 @@ import type {
   SharkScore,
   SessionEndState,
   RoundTurnEntry,
+  PitchState,
 } from "@/lib/types";
 
-// ── Stub response pools (replace each with real LLM call) ──
+const MAX_RETRIES = 2;
+/** Safety cap: no more than 4 consecutive Shark calls per user message */
+const MAX_CHAIN_DEPTH = 4;
 
-const ROUND1_RESPONSES: Record<SharkId, string[]> = {
-  mark: [
-    "Interesting. Walk me through your customer acquisition strategy — how do you get your first 10,000 users?",
-    "I like where this is going. But what's the tech moat? Anyone can copy a feature, so what makes this defensible?",
-    "Here's what I'm thinking — the vision is big, but I need to understand the unit economics before I get excited.",
-  ],
-  kevin: [
-    "Let me cut to the chase — what are your revenues right now, and what were they last year?",
-    "You're asking me for money. I need to know when I get it back. What does your payback period look like?",
-    "I've heard a lot of passion. Now show me the numbers. What's your gross margin?",
-  ],
-  barbara: [
-    "I love the energy! Tell me about your team — who's building this with you?",
-    "This feels like a real product people would talk about. But who exactly is your customer? Paint me a picture.",
-    "You've got something here. The question is — why are YOU the right person to build this?",
-  ],
+// TODO(§15): Replace with a dedicated per-Shark scoring call at session end
+const DEFAULT_SCORES: Record<SharkId, { out: number; offer: number }> = {
+  mark: { out: 52, offer: 78 },
+  kevin: { out: 40, offer: 65 },
+  barbara: { out: 55, offer: 82 },
 };
 
-const ROUND2_RESPONSES: Record<SharkId, string[]> = {
-  mark: [
-    "OK but here's my concern — you haven't mentioned how you handle competition. What happens when a big player enters your space?",
-    "I'm still in, but I need you to convince me the market timing is right. Why now and not two years ago?",
-  ],
-  kevin: [
-    "Your burn rate terrifies me. At this pace, you'll be out of cash in what, 8 months? How do you fix that?",
-    "Let me tell you something — I've seen a hundred pitches like this. What makes yours different from every other one that failed?",
-  ],
-  barbara: [
-    "I have to be honest — I'm struggling to see how this scales beyond your first city. What's the expansion plan?",
-    "I want to believe in this, but your brand identity feels generic. How do you stand out on a crowded shelf?",
-  ],
-};
-
-const ROUND3_OFFER: Record<SharkId, { text: string; amount: number; equity: number; score: number }> = {
-  mark: {
-    text: "Here's the deal — I'll give you $400,000 for 20% equity. I can open doors in tech that nobody else at this table can. But I need an answer now.",
-    amount: 400000, equity: 20, score: 78,
-  },
-  kevin: {
-    text: "I'll do $300,000, but I want 25% and a $1 per unit royalty until I recoup my investment. That's the Mr. Wonderful deal — take it or leave it.",
-    amount: 300000, equity: 25, score: 65,
-  },
-  barbara: {
-    text: "I believe in you. $350,000 for 22%. I'll personally help you with branding and retail strategy. That's my offer.",
-    amount: 350000, equity: 22, score: 82,
-  },
-};
-
-const ROUND3_PASS: Record<SharkId, { text: string; score: number }> = {
-  mark: { text: "Look, I like you, but I don't see how this gets to the scale I need. I'm out.", score: 52 },
-  kevin: { text: "The numbers don't work for me. You're going to need a lot more revenue before I write a check. I'm out.", score: 40 },
-  barbara: { text: "Honey, I just don't feel the connection with this product. I need to trust my gut. I'm out.", score: 55 },
-};
-
-const REACTION_POOL: Record<SharkId, string[]> = {
-  mark: [
-    "Kevin's being too harsh — but he's not wrong about the margins.",
-    "I actually agree with Barbara on this one. The founder matters.",
-    "Don't listen to Mr. Wonderful's royalty nonsense — take equity and grow.",
-  ],
-  kevin: [
-    "Tony, you throw money at anything with a logo. This needs more diligence.",
-    "Barbara, your gut feeling doesn't show up on a balance sheet.",
-    "I'm the only one here asking the real questions.",
-  ],
-  barbara: [
-    "Kevin, stop scaring them. Not everything is a spreadsheet.",
-    "Tony's right — the tech angle is strong, but it needs a human touch.",
-    "I think both of you are missing the point. It's about the brand.",
-  ],
-};
-
-const TURNS_PER_ROUND = 2;
-
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function buildScores(
-  activeSharks: SharkId[],
+function buildEndScores(
   outSharks: SharkId[],
-  offeredShark: SharkId | null,
+  offers: Partial<Record<SharkId, { amount: number; equity: number }>>,
 ): SharkScore[] {
   return SHARK_ORDER.map((id) => {
-    if (offeredShark === id) {
-      const o = ROUND3_OFFER[id];
-      return { sharkId: id, score: o.score, comment: o.text.slice(0, 120) };
+    if (offers[id]) {
+      return { sharkId: id, score: DEFAULT_SCORES[id].offer, comment: "Made an offer." };
     }
     if (outSharks.includes(id)) {
-      const p = ROUND3_PASS[id];
-      return { sharkId: id, score: p.score, comment: p.text.slice(0, 120) };
+      return { sharkId: id, score: DEFAULT_SCORES[id].out, comment: "Decided to pass." };
     }
     return { sharkId: id, score: 60, comment: "Session ended before a final decision." };
   });
+}
+
+/**
+ * Resolve which Shark speaks first this turn, driven by §14 handoff fields.
+ *
+ * Priority order:
+ * 1. nextSpeaker is a SharkId (cross-talk handed off before user replied)
+ * 2. nextAfterPitcher (user just replied to a pitcher prompt)
+ * 3. First in-order active Shark (round opener / fallback)
+ */
+function getFirstSpeaker(pitch: PitchState): SharkId | null {
+  const active = SHARK_ORDER.filter((id) => !pitch.out.includes(id));
+  if (active.length === 0) return null;
+
+  if (pitch.nextSpeaker && pitch.nextSpeaker !== "pitcher") {
+    const ns = pitch.nextSpeaker as SharkId;
+    if (active.includes(ns)) return ns;
+  }
+
+  if (pitch.nextAfterPitcher && active.includes(pitch.nextAfterPitcher)) {
+    return pitch.nextAfterPitcher;
+  }
+
+  return active[0];
 }
 
 export async function POST(req: Request) {
@@ -132,126 +88,138 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session has already ended" }, { status: 400 });
   }
 
-  // Skip processing for validation pings
+  // Ping: used by the client to validate the session without triggering a real turn
   if (message === "__ping__") {
     return NextResponse.json({
       round: session.pitch.round,
       lines: [],
-      reactionLines: [],
       activeSharks: SHARK_ORDER.filter((id) => !session.pitch.out.includes(id)),
       shouldEndPitch: false,
     } satisfies PitchTurnResponse);
   }
 
-  const { round, out } = session.pitch;
-  const turnInRound = session.pitch.turnInRound + 1;
-  const activeSharks = SHARK_ORDER.filter((id) => !out.includes(id));
+  // ── Sequential Shark chain ──────────────────────────────────────────────────
+  //
+  // Each user message may trigger multiple Shark calls when a Shark hands off
+  // directly to another Shark (cross-talk) via nextSpeaker. We keep calling until
+  // nextSpeaker === "pitcher", then hand control back to the user.
+  //
+  // agentHistory is NOT mutated here — it is written once at the end of the turn
+  // so buildSharkPayload always sees the clean prev-turn history. The within-turn
+  // context (pitcher message + Shark responses so far) travels via runningRoundTurns,
+  // which buildSharkPayload injects as the final "user" message in each call.
 
-  // ── Generate shark responses based on current round ──────
-
+  const runningOut: SharkId[] = [...session.pitch.out];
+  const runningRoundTurns: RoundTurnEntry[] = [
+    ...session.pitch.roundTurns,
+    { speaker: "pitcher", content: message },
+  ];
+  const runningSpoken: SharkId[] = [...session.pitch.spokenThisRound];
+  const offers: Partial<Record<SharkId, { amount: number; equity: number }>> = {};
   const lines: SharkLine[] = [];
-  const newOut = [...out];
+
+  let currentSpeaker: SharkId | null = getFirstSpeaker(session.pitch);
+  let chainDepth = 0;
+  let lastNextSpeaker: "pitcher" | SharkId = "pitcher";
+  let lastNextAfterPitcher: SharkId | null = null;
+
+  while (currentSpeaker !== null && chainDepth < MAX_CHAIN_DEPTH) {
+    const sharkId = currentSpeaker;
+    chainDepth++;
+
+    // Build payload using session history + running round transcript as context
+    const tempPitch: PitchState = {
+      ...session.pitch,
+      out: runningOut,
+      roundTurns: runningRoundTurns,
+      spokenThisRound: runningSpoken,
+    };
+    const payload = buildSharkPayload(sharkId, tempPitch);
+
+    // Active Sharks (excluding this speaker) used for nextSpeaker/nextAfterPitcher validation
+    const otherActive = SHARK_ORDER.filter((id) => !runningOut.includes(id) && id !== sharkId);
+
+    // Call Gemini; retry up to MAX_RETRIES if deal terms are out of §14 bounds
+    let rawText = await callGeminiForShark(sharkId, payload);
+    let parsed = parseSharkResponse(rawText, runningOut, otherActive);
+
+    let retries = 0;
+    while (parsed.json && !hasValidDealTerms(parsed.json) && retries < MAX_RETRIES) {
+      retries++;
+      console.warn(
+        `[pitch/turn] Invalid deal terms for ${sharkId} — retry ${retries}/${MAX_RETRIES}`,
+      );
+      rawText = await callGeminiForShark(sharkId, payload);
+      parsed = parseSharkResponse(rawText, runningOut, otherActive);
+    }
+
+    // Still invalid after retries → §16 fallback (Shark goes out)
+    if (parsed.json && !hasValidDealTerms(parsed.json)) {
+      console.warn(`[pitch/turn] ${sharkId} still invalid after retries — §16 fallback`);
+      parsed = parseSharkResponse(buildFallbackResponse(sharkId), runningOut, otherActive);
+    }
+
+    const json = parsed.json;
+    const displayText = parsed.displayText;
+
+    const line: SharkLine = { sharkId, text: displayText };
+    if (json.decision === "offer") {
+      line.decision = { decision: "offer", amount: json.amount, equity: json.equity, score: 0 };
+      offers[sharkId] = { amount: json.amount, equity: json.equity };
+    } else if (json.decision === "pass") {
+      line.decision = { decision: "pass", amount: 0, equity: 0, score: 0 };
+    }
+    lines.push(line);
+
+    // Update running state for the next call in the chain
+    if (json.status === "out" && !runningOut.includes(sharkId)) {
+      runningOut.push(sharkId);
+    }
+    runningRoundTurns.push({ speaker: sharkId, content: displayText });
+    if (!runningSpoken.includes(sharkId)) runningSpoken.push(sharkId);
+
+    lastNextSpeaker = json.nextSpeaker;
+    lastNextAfterPitcher = json.nextAfterPitcher;
+
+    // Continue chain only if the Shark handed off to another in-Shark
+    if (json.status === "out" || json.nextSpeaker === "pitcher") {
+      currentSpeaker = null;
+    } else {
+      const next = json.nextSpeaker as SharkId;
+      currentSpeaker = !runningOut.includes(next) ? next : null;
+    }
+  }
+
+  // ── Round / session end logic ───────────────────────────────────────────────
+
+  const finalActive = SHARK_ORDER.filter((id) => !runningOut.includes(id));
+
+  // Round completes when every in-at-round-start Shark has spoken (or gone out) this round
+  const roundComplete = session.pitch.inAtRoundStart.every(
+    (id) => runningSpoken.includes(id) || runningOut.includes(id),
+  );
+
+  let nextRound = session.pitch.round;
   let shouldEndPitch = false;
   let outcome: SessionEndState | undefined;
-  let offeredShark: SharkId | null = null;
 
-  if (round === 1) {
-    // TODO: Replace with parallel LLM calls to GPT-4o (Mark), Claude (Kevin), Gemini (Barbara)
-    for (const id of activeSharks) {
-      lines.push({
-        sharkId: id,
-        text: pickRandom(ROUND1_RESPONSES[id]),
-      });
-    }
-  } else if (round === 2) {
-    // TODO: Replace with LLM calls; parse decision JSON from each response
-    for (const id of activeSharks) {
-      // On the last turn of round 2, one shark goes out (stub behavior)
-      if (turnInRound >= TURNS_PER_ROUND && id === "kevin" && !newOut.includes("kevin")) {
-        const pass = ROUND3_PASS.kevin;
-        newOut.push("kevin");
-        lines.push({
-          sharkId: "kevin",
-          text: pass.text,
-          decision: { decision: "pass", amount: 0, equity: 0, score: pass.score },
-        });
-      } else {
-        lines.push({
-          sharkId: id,
-          text: pickRandom(ROUND2_RESPONSES[id]),
-        });
-      }
-    }
-
-    // Check for game over — all sharks out
-    const stillIn = SHARK_ORDER.filter((id) => !newOut.includes(id));
-    if (stillIn.length === 0) {
-      shouldEndPitch = true;
-      outcome = "game_over";
-    }
-  } else if (round === 3) {
-    // TODO: Replace with LLM calls that return structured decision JSON
-    for (const id of activeSharks) {
-      if (id === "mark") {
-        const offer = ROUND3_OFFER.mark;
-        offeredShark = "mark";
-        lines.push({
-          sharkId: "mark",
-          text: offer.text,
-          decision: { decision: "offer", amount: offer.amount, equity: offer.equity, score: offer.score },
-        });
-      } else if (id === "barbara") {
-        const offer = ROUND3_OFFER.barbara;
-        lines.push({
-          sharkId: "barbara",
-          text: offer.text,
-          decision: { decision: "offer", amount: offer.amount, equity: offer.equity, score: offer.score },
-        });
-      } else {
-        const pass = ROUND3_PASS[id];
-        newOut.push(id);
-        lines.push({
-          sharkId: id,
-          text: pass.text,
-          decision: { decision: "pass", amount: 0, equity: 0, score: pass.score },
-        });
-      }
-    }
-
-    // End the pitch after Round 3 decisions
+  if (finalActive.length === 0) {
     shouldEndPitch = true;
-    const stillIn = SHARK_ORDER.filter((id) => !newOut.includes(id));
-    outcome = stillIn.length > 0 ? "deal" : "no_deal";
-  }
-
-  // ── Generate cross-talk reactions ────────────────────────
-
-  const respondingSharks = activeSharks.filter((id) => !newOut.includes(id));
-  const reactionLines: SharkLine[] = [];
-  if (respondingSharks.length > 1 && !shouldEndPitch) {
-    // TODO: Replace with LLM calls that pass other sharks' responses as context
-    for (const id of respondingSharks) {
-      reactionLines.push({
-        sharkId: id,
-        text: pickRandom(REACTION_POOL[id]),
-      });
+    outcome = Object.keys(offers).length > 0 ? "deal" : "game_over";
+  } else if (roundComplete) {
+    if (session.pitch.round === 3) {
+      shouldEndPitch = true;
+      outcome = Object.keys(offers).length > 0 ? "deal" : "no_deal";
+    } else {
+      nextRound = (session.pitch.round + 1) as PitchRound;
     }
   }
 
-  // ── Determine round advancement ──────────────────────────
-
-  let nextRound = round;
-  if (!shouldEndPitch && turnInRound >= TURNS_PER_ROUND && round < 3) {
-    nextRound = (round + 1) as PitchRound;
-  }
-
-  const finalActiveSharks = SHARK_ORDER.filter((id) => !newOut.includes(id));
-
-  // ── Build end data if session is ending ──────────────────
+  // ── End data ────────────────────────────────────────────────────────────────
 
   let endData: PitchTurnResponse["endData"];
   if (shouldEndPitch) {
-    const scores = buildScores(finalActiveSharks, newOut, offeredShark);
+    const scores = buildEndScores(runningOut, offers);
     endData = {
       sharkScores: scores,
       improvementTips: [
@@ -262,77 +230,62 @@ export async function POST(req: Request) {
         "Show a clear path to profitability, not just a growth-at-all-costs story",
       ],
     };
-    if (outcome === "deal" && offeredShark) {
-      const offer = ROUND3_OFFER[offeredShark];
-      endData.dealSharkId = offeredShark;
-      endData.dealAmount = offer.amount;
-      endData.dealEquity = offer.equity;
+    const offerSharks = Object.keys(offers) as SharkId[];
+    if (outcome === "deal" && offerSharks.length > 0) {
+      const dealSharkId = offerSharks[0];
+      endData.dealSharkId = dealSharkId;
+      endData.dealAmount = offers[dealSharkId]!.amount;
+      endData.dealEquity = offers[dealSharkId]!.equity;
     }
   }
 
-  // ── Persist state ────────────────────────────────────────
+  // ── Persist session state ───────────────────────────────────────────────────
 
   updateSession(sessionId, (prev) => {
     const roundAdvanced = nextRound !== prev.pitch.round;
+    const activeAtTurnStart = SHARK_ORDER.filter((id) => !prev.pitch.out.includes(id));
 
-    // Build the within-round transcript entries for this turn
-    const pitcherEntry: RoundTurnEntry = { speaker: "pitcher", content: message };
-    const sharkEntries: RoundTurnEntry[] = lines.map((l) => ({
-      speaker: l.sharkId,
-      content: l.text,
-    }));
-    const roundTurns = roundAdvanced
-      ? [pitcherEntry, ...sharkEntries]
-      : [...prev.pitch.roundTurns, pitcherEntry, ...sharkEntries];
-
-    // Pitcher line goes into every still-in Shark's thread; each Shark's reply into their own
-    const activeAtStart = SHARK_ORDER.filter((id) => !prev.pitch.out.includes(id));
+    // Write pitcher message as "user" into every active Shark's thread,
+    // then each Shark's display text as "assistant" into their own thread.
+    // The round-context message used during calls is ephemeral — not persisted.
     const agentHistory = { ...prev.pitch.agentHistory };
-    for (const id of activeAtStart) {
-      agentHistory[id] = [...agentHistory[id], { role: "user", content: message }];
+    for (const id of activeAtTurnStart) {
+      agentHistory[id] = [
+        ...prev.pitch.agentHistory[id],
+        { role: "user" as const, content: message },
+      ];
     }
     for (const line of lines) {
       agentHistory[line.sharkId] = [
         ...agentHistory[line.sharkId],
-        { role: "assistant", content: line.text },
+        { role: "assistant" as const, content: line.text },
       ];
     }
-
-    // Track which Sharks have spoken at least once this round
-    const spokenThisRound = roundAdvanced
-      ? [...new Set(lines.map((l) => l.sharkId))]
-      : [...new Set([...prev.pitch.spokenThisRound, ...lines.map((l) => l.sharkId)])];
-
-    // On a new round, reset inAtRoundStart to whoever is still in after this turn's outs
-    const inAtRoundStart = roundAdvanced
-      ? SHARK_ORDER.filter((id) => !newOut.includes(id))
-      : prev.pitch.inAtRoundStart;
 
     return {
       ...prev,
       pitch: {
         ...prev.pitch,
         round: nextRound,
-        turnInRound: roundAdvanced ? 0 : turnInRound,
-        out: newOut,
+        turnInRound: roundAdvanced ? 0 : prev.pitch.turnInRound + 1,
+        out: runningOut,
         agentHistory,
-        roundTurns,
-        spokenThisRound,
-        inAtRoundStart,
+        roundTurns: roundAdvanced ? [] : runningRoundTurns,
+        spokenThisRound: roundAdvanced ? [] : runningSpoken,
+        inAtRoundStart: roundAdvanced ? finalActive : prev.pitch.inAtRoundStart,
+        nextSpeaker: lastNextSpeaker,
+        nextAfterPitcher: lastNextAfterPitcher,
       },
       endState: outcome ?? "active",
     };
   });
 
-  const payload: PitchTurnResponse = {
+  return NextResponse.json({
     round: nextRound,
     lines,
-    reactionLines: reactionLines.length > 0 ? reactionLines : undefined,
-    activeSharks: finalActiveSharks,
+    activeSharks: finalActive,
     shouldEndPitch,
     outcome,
     endData,
-  };
-
-  return NextResponse.json(payload);
+  } satisfies PitchTurnResponse);
 }
