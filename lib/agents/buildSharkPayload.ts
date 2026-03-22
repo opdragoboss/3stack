@@ -1,4 +1,5 @@
 import { SHARK_SYSTEM_PROMPT } from "@/lib/constants/prompts";
+import { SHARK_LABEL } from "@/lib/constants/sharks";
 import type { ChatMessage, PitchState, RoundTurnEntry, SharkId } from "@/lib/types";
 
 /**
@@ -24,14 +25,11 @@ export interface SharkPromptPayload {
 function formatRoundTranscript(turns: RoundTurnEntry[]): string {
   if (turns.length === 0) return "";
   const lines = turns.map((t) => {
-    const label = t.speaker === "pitcher" ? "Pitcher" : capitalize(t.speaker);
+    const label =
+      t.speaker === "pitcher" ? "Pitcher" : SHARK_LABEL[t.speaker as SharkId];
     return `${label}: ${t.content}`;
   });
   return lines.join("\n");
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**

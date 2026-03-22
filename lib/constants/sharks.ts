@@ -3,13 +3,13 @@ import type { SharkId } from "@/lib/types";
 export const SHARK_ORDER: SharkId[] = ["mark", "kevin", "barbara"];
 
 export const SHARK_LABEL: Record<SharkId, string> = {
-  mark: "Mark Cuban",
+  mark: "Big Money Tony",
   kevin: "Kevin O'Leary",
   barbara: "Barbara Corcoran",
 };
 
 export const SHARK_ROLE: Record<SharkId, string> = {
-  mark: "Tech Investor & Dallas Mavericks Owner",
+  mark: "Tech Billionaire · Sold SnapByte · Third Espresso",
   kevin: "Mr. Wonderful & O'Leary Funds",
   barbara: "Real Estate Mogul & The Corcoran Group",
 };

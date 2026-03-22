@@ -18,7 +18,7 @@ export function applyDiff(base: Frame, diff: Record<number, string>): Frame {
 }
 
 // ────────────────────────────────────────────────────────────
-// Mark Cuban — dark short hair, warm skin, blue casual shirt
+// Big Money Tony (mark slot) — dark short hair, warm skin, blue casual shirt
 // ────────────────────────────────────────────────────────────
 const MARK: SharkSprite = {
   palette: {
