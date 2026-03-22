@@ -4,6 +4,7 @@ import { SHARK_ORDER } from "@/lib/constants/sharks";
 import { buildSharkPayload } from "@/lib/agents/buildSharkPayload";
 import { callGeminiForShark, buildFallbackResponse } from "@/lib/pitch/callGeminiForShark";
 import { parseSharkResponse, hasValidDealTerms } from "@/lib/pitch/parseSharkResponse";
+import { enrichSharkLinesWithTts } from "@/lib/elevenlabs";
 import type {
   PitchTurnRequest,
   PitchTurnResponse,
@@ -215,6 +216,8 @@ export async function POST(req: Request) {
     }
   }
 
+  const linesWithAudio = await enrichSharkLinesWithTts(lines);
+
   // ── End data ────────────────────────────────────────────────────────────────
 
   let endData: PitchTurnResponse["endData"];
@@ -261,6 +264,13 @@ export async function POST(req: Request) {
         { role: "assistant" as const, content: line.text },
       ];
     }
+    
+    for (const line of linesWithAudio) {
+      agentHistory[line.sharkId] = [
+        ...agentHistory[line.sharkId],
+        { role: "assistant" as const, content: line.text },
+      ];
+    }
 
     return {
       ...prev,
@@ -282,7 +292,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     round: nextRound,
-    lines,
+    lines: linesWithAudio,
     activeSharks: finalActive,
     shouldEndPitch,
     outcome,

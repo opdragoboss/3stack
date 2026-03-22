@@ -41,6 +41,16 @@ interface SpeechQueueItem {
   sharkId: SharkId;
   text: string;
   isReaction?: boolean;
+  audioUrl?: string | null;
+}
+
+function shuffleArray<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 export function PitchMode() {
@@ -97,20 +107,58 @@ export function PitchMode() {
     if (speechQueue.length > 0 || currentSpeech) return;
     setPhase("ready_to_pitch");
   }, [phase, speechQueue.length, currentSpeech]);
-
-  // ── Word-by-word streaming effect ─────────────────────────
+  // ── Speech: ElevenLabs audio when present, else word-by-word ─
   useEffect(() => {
     if (!currentSpeech) {
       setSpeakingShark(null);
       return;
     }
 
-    const { sharkId, text, isReaction } = currentSpeech;
-    const words = text.split(/\s+/);
-    let wordIndex = 0;
+    const { sharkId, text, isReaction, audioUrl } = currentSpeech;
     let cancelled = false;
 
     setSpeakingShark(sharkId);
+
+    const commitAndAdvance = () => {
+      if (cancelled) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `shark-${sharkId}-${Date.now()}-${Math.random()}`,
+          sender: "shark" as const,
+          content: text,
+          timestamp: new Date(),
+          sharkId,
+          isReaction,
+        },
+      ]);
+      setStreamedText("");
+      setTimeout(() => {
+        if (cancelled) return;
+        setSpeechQueue((prev) => prev.slice(1));
+      }, 400);
+    };
+
+    if (audioUrl) {
+      setStreamedText(text);
+      const audio = new Audio(audioUrl);
+      const onDone = () => {
+        if (cancelled) return;
+        commitAndAdvance();
+      };
+      audio.addEventListener("ended", onDone);
+      audio.addEventListener("error", onDone);
+      void audio.play().catch(() => onDone());
+      return () => {
+        cancelled = true;
+        audio.pause();
+        audio.removeEventListener("ended", onDone);
+        audio.removeEventListener("error", onDone);
+      };
+    }
+
+    const words = text.split(/\s+/);
+    let wordIndex = 0;
     setStreamedText(words[0] ?? "");
 
     const interval = setInterval(() => {
@@ -119,28 +167,9 @@ export function PitchMode() {
       if (wordIndex >= words.length) {
         clearInterval(interval);
         setStreamedText(text);
-
-        // Pause for reading, then commit to chat and advance
         setTimeout(() => {
           if (cancelled) return;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `shark-${sharkId}-${Date.now()}-${Math.random()}`,
-              sender: "shark" as const,
-              content: text,
-              timestamp: new Date(),
-              sharkId,
-              isReaction,
-            },
-          ]);
-          setStreamedText("");
-
-          // Brief gap before next speaker
-          setTimeout(() => {
-            if (cancelled) return;
-            setSpeechQueue((prev) => prev.slice(1));
-          }, 400);
+          commitAndAdvance();
         }, 600);
       } else {
         setStreamedText(words.slice(0, wordIndex + 1).join(" "));
@@ -226,13 +255,23 @@ export function PitchMode() {
       const serverOut = SHARK_ORDER.filter((id) => !data.activeSharks.includes(id));
       setOutSharks(serverOut);
 
+      // Build speech queue — main lines and reactions each shuffled (hard requirements)
       const queue: SpeechQueueItem[] = [];
-      for (const line of data.lines) {
-        queue.push({ sharkId: line.sharkId, text: line.text });
+      for (const line of shuffleArray(data.lines)) {
+        queue.push({
+          sharkId: line.sharkId,
+          text: line.text,
+          audioUrl: line.audioUrl,
+        });
       }
       if (data.reactionLines?.length) {
-        for (const line of data.reactionLines) {
-          queue.push({ sharkId: line.sharkId, text: line.text, isReaction: true });
+        for (const line of shuffleArray(data.reactionLines)) {
+          queue.push({
+            sharkId: line.sharkId,
+            text: line.text,
+            isReaction: true,
+            audioUrl: line.audioUrl,
+          });
         }
       }
 
@@ -254,9 +293,11 @@ export function PitchMode() {
       setSpeechQueue(queue);
 
       if (queue.length > 0) {
-        setSpeakingShark(queue[0].sharkId);
-        const firstWords = queue[0].text.split(/\s+/);
-        setStreamedText(firstWords[0] ?? "");
+        const first = queue[0];
+        setSpeakingShark(first.sharkId);
+        setStreamedText(
+          first.audioUrl ? first.text : (first.text.split(/\s+/)[0] ?? ""),
+        );
       }
     } catch {
       setMessages((prev) => [
