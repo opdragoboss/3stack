@@ -9,6 +9,7 @@ import type {
   PitchRound,
   SharkScore,
   SessionEndState,
+  RoundTurnEntry,
 } from "@/lib/types";
 
 // ── Stub response pools (replace each with real LLM call) ──
@@ -271,24 +272,57 @@ export async function POST(req: Request) {
 
   // ── Persist state ────────────────────────────────────────
 
-  updateSession(sessionId, (prev) => ({
-    ...prev,
-    pitch: {
-      ...prev.pitch,
-      round: nextRound,
-      turnInRound: nextRound !== round ? 0 : turnInRound,
-      out: newOut,
-      history: [
-        ...prev.pitch.history,
-        { role: "user" as const, content: message },
-        ...lines.map((l) => ({
-          role: "assistant" as const,
-          content: `[${l.sharkId}] ${l.text}`,
-        })),
-      ],
-    },
-    endState: outcome ?? "active",
-  }));
+  updateSession(sessionId, (prev) => {
+    const roundAdvanced = nextRound !== prev.pitch.round;
+
+    // Build the within-round transcript entries for this turn
+    const pitcherEntry: RoundTurnEntry = { speaker: "pitcher", content: message };
+    const sharkEntries: RoundTurnEntry[] = lines.map((l) => ({
+      speaker: l.sharkId,
+      content: l.text,
+    }));
+    const roundTurns = roundAdvanced
+      ? [pitcherEntry, ...sharkEntries]
+      : [...prev.pitch.roundTurns, pitcherEntry, ...sharkEntries];
+
+    // Pitcher line goes into every still-in Shark's thread; each Shark's reply into their own
+    const activeAtStart = SHARK_ORDER.filter((id) => !prev.pitch.out.includes(id));
+    const agentHistory = { ...prev.pitch.agentHistory };
+    for (const id of activeAtStart) {
+      agentHistory[id] = [...agentHistory[id], { role: "user", content: message }];
+    }
+    for (const line of lines) {
+      agentHistory[line.sharkId] = [
+        ...agentHistory[line.sharkId],
+        { role: "assistant", content: line.text },
+      ];
+    }
+
+    // Track which Sharks have spoken at least once this round
+    const spokenThisRound = roundAdvanced
+      ? [...new Set(lines.map((l) => l.sharkId))]
+      : [...new Set([...prev.pitch.spokenThisRound, ...lines.map((l) => l.sharkId)])];
+
+    // On a new round, reset inAtRoundStart to whoever is still in after this turn's outs
+    const inAtRoundStart = roundAdvanced
+      ? SHARK_ORDER.filter((id) => !newOut.includes(id))
+      : prev.pitch.inAtRoundStart;
+
+    return {
+      ...prev,
+      pitch: {
+        ...prev.pitch,
+        round: nextRound,
+        turnInRound: roundAdvanced ? 0 : turnInRound,
+        out: newOut,
+        agentHistory,
+        roundTurns,
+        spokenThisRound,
+        inAtRoundStart,
+      },
+      endState: outcome ?? "active",
+    };
+  });
 
   const payload: PitchTurnResponse = {
     round: nextRound,
