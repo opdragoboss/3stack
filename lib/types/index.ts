@@ -83,6 +83,20 @@ export interface SessionSnapshot {
   endState: SessionEndState;
 }
 
+/** POST /api/pitch/start — validates pitch then fetches Perplexity research */
+export interface PitchStartRequest {
+  sessionId: string;
+  pitchText: string;
+}
+
+export interface PitchStartResponse {
+  valid: boolean;
+  /** Only present when valid is false */
+  reason?: string;
+  /** Perplexity summary — set on session and echoed here when available */
+  marketContext?: string;
+}
+
 /** POST /api/session/init */
 export interface SessionInitRequest {
   entry: SessionEntry;

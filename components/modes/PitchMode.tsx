@@ -16,9 +16,12 @@ import type {
   PitchRound,
   PitchMessage,
   PitchTurnResponse,
+  PitchStartResponse,
   SharkId,
   SharkOffer,
 } from "@/lib/types";
+
+type PitchPhase = "pitching" | "validating" | "researching" | "invalid" | "in-tank";
 
 const ROUND_NAMES: Record<PitchRound, string> = {
   1: "The Pitch",
@@ -35,6 +38,8 @@ interface SpeechQueueItem {
 export function PitchMode() {
   const router = useRouter();
   const { sessionId, error } = useOrCreateSessionId("pitch");
+  const [phase, setPhase] = useState<PitchPhase>("pitching");
+  const [invalidReason, setInvalidReason] = useState("");
   const [round, setRound] = useState<PitchRound>(1);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<PitchMessage[]>([]);
@@ -146,8 +151,45 @@ export function PitchMode() {
     }, 1400);
   }
 
+  async function startPitch() {
+    if (!sessionId || !input.trim() || phase !== "pitching") return;
+    const pitchText = input.trim();
+    setPhase("validating");
+
+    try {
+      const res = await fetch("/api/pitch/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, pitchText }),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as PitchStartResponse;
+
+      if (!data.valid) {
+        setInvalidReason(data.reason ?? "That doesn't look like a valid pitch.");
+        setPhase("invalid");
+      } else {
+        setPhase("researching");
+        // Brief pause so the "Researching…" screen is visible before entering tank
+        setTimeout(() => {
+          setInput("");
+          setPhase("in-tank");
+        }, 800);
+      }
+    } catch {
+      setInvalidReason("Something went wrong. Please try again.");
+      setPhase("invalid");
+    }
+  }
+
+  function retryPitch() {
+    setInvalidReason("");
+    setPhase("pitching");
+  }
+
   async function submit() {
-    if (!sessionId || !input.trim() || isBusy) return;
+    if (!sessionId || !input.trim() || isBusy || phase !== "in-tank") return;
 
     const userText = input.trim();
     setInput("");
@@ -277,6 +319,82 @@ export function PitchMode() {
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
+      {/* ── Phase gate: pitch entry / validating / researching / invalid ── */}
+      <AnimatePresence>
+        {phase !== "in-tank" && (
+          <motion.div
+            key="phase-gate"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/97 backdrop-blur-sm"
+          >
+            {(phase === "pitching" || phase === "invalid") && (
+              <div className="flex w-full max-w-xl flex-col gap-6 px-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-white">Enter the Tank</h2>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    Describe your business, how much you&apos;re asking for, and what equity you&apos;re offering.
+                  </p>
+                </div>
+
+                {phase === "invalid" && (
+                  <p className="rounded-xl border border-red-800/50 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+                    {invalidReason}
+                  </p>
+                )}
+
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void startPitch();
+                    }
+                  }}
+                  placeholder="E.g. I'm pitching a AI-powered meal-planning app. I'm asking for $200,000 for 10% equity."
+                  rows={5}
+                  className="resize-none rounded-xl border border-slate-600/40 bg-slate-900/70 px-4 py-3 text-sm text-zinc-100 placeholder:text-slate-500 focus:border-amber-500/60 focus:outline-none"
+                />
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void startPitch()}
+                    disabled={!input.trim()}
+                    className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-40"
+                  >
+                    {phase === "invalid" ? "Try Again" : "Submit Pitch"}
+                  </button>
+                  {phase === "invalid" && (
+                    <button
+                      type="button"
+                      onClick={retryPitch}
+                      className="rounded-xl border border-slate-600/40 px-5 py-3 text-sm text-zinc-400 hover:text-zinc-200"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(phase === "validating" || phase === "researching") && (
+              <div className="flex flex-col items-center gap-4">
+                <TypingIndicator />
+                <p className="text-sm font-medium text-zinc-300">
+                  {phase === "validating"
+                    ? "Checking your pitch…"
+                    : "Researching your market…"}
+                </p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Round Transition Overlay ────────────────────────── */}
       <AnimatePresence>
         {roundTransition && (
